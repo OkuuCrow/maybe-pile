@@ -1,0 +1,7 @@
+dist
+release
+coverage
+node_modules
+package-lock.json
+tests/unit/__snapshots__
+*.md

@@ -1,0 +1,88 @@
+# Maybe Pile packaging (electron-builder 26). See docs/packaging.md for per-OS commands.
+appId: app.maybepile.desktop
+productName: Maybe Pile
+copyright: Copyright © 2026 Maybe Pile contributors
+directories:
+  output: release
+  buildResources: build
+# Everything is bundled by esbuild/Vite into dist/, so the app ships no node_modules.
+files:
+  - dist/**/*
+  - '!dist/**/*.map'
+  - build/icon.png
+  - package.json
+asar: true
+fileAssociations:
+  - ext: mpbackup
+    name: Maybe Pile Backup
+    description: Maybe Pile full backup
+    mimeType: application/x-maybepile-backup
+    role: Viewer
+    icon: build/icon.png
+
+win:
+  target:
+    - nsis
+    - portable
+  icon: build/icon.png
+  # Code signing is configured through CSC_LINK / CSC_KEY_PASSWORD env vars in CI; unsigned locally.
+nsis:
+  oneClick: false
+  # Default is a per-user install (no admin needed); the installer offers "for all users" too.
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  # Shortcuts are created by our own page (build/installer.nsh) so the user can opt out of each.
+  createDesktopShortcut: false
+  createStartMenuShortcut: false
+  shortcutName: Maybe Pile
+  include: build/installer.nsh
+  deleteAppDataOnUninstall: false
+  artifactName: Maybe-Pile-Setup-${version}.${ext}
+  uninstallDisplayName: Maybe Pile
+portable:
+  # Portable data lives in MaybePileData/ next to the .exe (see src/main/portable.ts).
+  artifactName: Maybe-Pile-Portable-${version}.${ext}
+
+mac:
+  category: public.app-category.entertainment
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Notarization runs only when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are set (CI secrets).
+  notarize: false
+dmg:
+  artifactName: Maybe-Pile-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+    - tar.gz
+  icon: build/icon.png
+  executableName: maybe-pile
+  category: Utility
+  synopsis: A local-first backlog for movies, shows, games and books
+  description: Someday, maybe. Now organized. Track what you want to watch, play and read — offline, private, portable.
+  desktop:
+    entry:
+      Name: Maybe Pile
+      Comment: Someday, maybe. Now organized.
+      Categories: Utility;AudioVideo;
+      Keywords: backlog;movies;tv;games;books;tracker;
+      StartupWMClass: Maybe Pile
+appImage:
+  artifactName: Maybe-Pile-${version}-${arch}.${ext}
+deb:
+  # libsecret enables OS-encrypted API key storage (safeStorage); without it keys fall back to plaintext with a warning.
+  depends: [libgtk-3-0, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0]
+rpm:
+  depends: [gtk3, nss, libXScrnSaver, libXtst, xdg-utils, at-spi2-core, libuuid, libsecret]

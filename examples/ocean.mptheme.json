@@ -1,0 +1,31 @@
+{
+  "format": "maybepile-theme",
+  "schemaVersion": 1,
+  "name": "Ocean",
+  "tokens": {
+    "colorScheme": "light",
+    "colors": {
+      "bg": "#F2F7F9",
+      "surface": "#FFFFFF",
+      "surfaceAlt": "#E4EEF2",
+      "text": "#10242E",
+      "textMuted": "#45606C",
+      "accent": "#0B5F86",
+      "onAccent": "#FFFFFF",
+      "border": "#6F8B97",
+      "focus": "#0B5F86",
+      "planned": "#4B5766",
+      "inProgress": "#145EA8",
+      "completed": "#1F6B33",
+      "onHold": "#8A5300",
+      "dropped": "#B02A1E",
+      "success": "#1F6B33",
+      "warning": "#8A5300",
+      "danger": "#B02A1E"
+    },
+    "radius": "large",
+    "density": "comfortable",
+    "fontScale": 1.05,
+    "fontFamily": "humanist"
+  }
+}

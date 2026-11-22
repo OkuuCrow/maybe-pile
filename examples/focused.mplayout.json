@@ -1,0 +1,21 @@
+{
+  "format": "maybepile-layout",
+  "schemaVersion": 1,
+  "dashboard": [
+    { "id": "continue", "visible": true, "span": 2 },
+    { "id": "recentlyAdded", "visible": true, "span": 1 },
+    { "id": "activity", "visible": true, "span": 1 },
+    { "id": "counts", "visible": true, "span": 2 },
+    { "id": "recentlyUpdated", "visible": false, "span": 1 },
+    { "id": "recentlyCompleted", "visible": false, "span": 1 },
+    { "id": "tags", "visible": false, "span": 2 }
+  ],
+  "library": [
+    { "id": "search", "visible": true },
+    { "id": "filters", "visible": true },
+    { "id": "sort", "visible": true },
+    { "id": "viewToggle", "visible": true },
+    { "id": "bulkBar", "visible": true },
+    { "id": "statusStrip", "visible": false }
+  ]
+}
