@@ -21,6 +21,7 @@ import type {
   DashboardData,
   DuplicateMatch,
   ItemDetail,
+  ItemSummary,
   LibraryPage,
   MutationOutcome,
   StatusSuggestion,
@@ -283,6 +284,7 @@ export class LibraryService {
       }
       if (input.fillRemaining && plan.offerFillRemaining)
         this.fillRemaining(row.id, row.type, plan.pass, now);
+      this.leaveQueueIfDone(row.id, plan.status);
       items.recomputeProgress(db, row.id);
     });
     this.ctx.log.info('item.status', { id: row.id, from: row.status, to: plan.status, pass: plan.pass });
@@ -419,6 +421,7 @@ export class LibraryService {
           this.today(),
           id,
         ]);
+      this.leaveQueueIfDone(id, s.status);
     });
     return { item: this.get(id), suggestions: [], applied: [s] };
   }
@@ -501,6 +504,15 @@ export class LibraryService {
             'UPDATE items SET status = ?, date_started = ?, date_completed = ?, updated_at = ? WHERE id = ?',
             [plan.status, plan.dateStarted, plan.dateCompleted, now, id],
           );
+          this.leaveQueueIfDone(id, plan.status);
+        } else if (input.action === 'addUpNext') {
+          if (row.up_next_position !== null || row.status === 'completed' || row.status === 'dropped')
+            continue;
+          db.run('UPDATE items SET up_next_position = ?, updated_at = ? WHERE id = ?', [
+            this.nextQueuePosition(),
+            now,
+            id,
+          ]);
         } else if (input.action === 'addTag') {
           items.addTag(db, id, input.tag);
           items.touch(db, id, now);
@@ -609,6 +621,136 @@ export class LibraryService {
       recentlyCompleted,
       activityByWeek: weeks,
       tagCounts: tagCounts(db, 30),
+      upNext: this.upNext(),
+      yearStats: this.yearStats(),
+    };
+  }
+
+  /* ---------------------------------------------------------------- Up Next queue */
+
+  /**
+   * "Up Next" is a short, user-ordered queue of what to start soon. Positions
+   * are compacted to 0..n-1 after every change. Completing or dropping an item
+   * takes it out of the queue automatically.
+   */
+  upNext(): (ItemSummary & { nextAction: string | null })[] {
+    const db = this.db;
+    return items
+      .summariesWhere(
+        db,
+        'i.up_next_position IS NOT NULL',
+        [],
+        'ORDER BY i.up_next_position ASC, i.id LIMIT 50',
+      )
+      .map((s) => ({ ...s, nextAction: items.computeProgress(db, s.id).nextAction }));
+  }
+
+  private nextQueuePosition(): number {
+    const max = this.db.get<{ p: number | null }>(
+      'SELECT max(up_next_position) AS p FROM items WHERE deleted_at IS NULL',
+    )?.p;
+    return (max ?? -1) + 1;
+  }
+
+  private compactQueue(): void {
+    const rows = this.db.all<{ id: string }>(
+      'SELECT id FROM items WHERE up_next_position IS NOT NULL ORDER BY up_next_position, id',
+    );
+    rows.forEach((r, i) => this.db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [i, r.id]));
+  }
+
+  private leaveQueueIfDone(id: string, status: Status): void {
+    if (status !== 'completed' && status !== 'dropped') return;
+    const r = this.db.run(
+      'UPDATE items SET up_next_position = NULL WHERE id = ? AND up_next_position IS NOT NULL',
+      [id],
+    );
+    if (r.changes > 0) this.compactQueue();
+  }
+
+  setUpNext(id: string, queued: boolean): ItemDetail {
+    const db = this.db;
+    const row = items.getItemRow(db, id);
+    if (!row) throw appError('NOT_FOUND', 'That item no longer exists.');
+    db.transaction(() => {
+      if (queued && row.up_next_position === null) {
+        db.run('UPDATE items SET up_next_position = ?, updated_at = ? WHERE id = ?', [
+          this.nextQueuePosition(),
+          this.nowIso(),
+          id,
+        ]);
+      } else if (!queued && row.up_next_position !== null) {
+        db.run('UPDATE items SET up_next_position = NULL, updated_at = ? WHERE id = ?', [this.nowIso(), id]);
+      }
+      this.compactQueue();
+    });
+    return this.get(id);
+  }
+
+  moveUpNext(id: string, direction: 'up' | 'down'): (ItemSummary & { nextAction: string | null })[] {
+    const db = this.db;
+    db.transaction(() => {
+      this.compactQueue();
+      const ids = db
+        .all<{ id: string }>(
+          'SELECT id FROM items WHERE up_next_position IS NOT NULL ORDER BY up_next_position',
+        )
+        .map((r) => r.id);
+      const i = ids.indexOf(id);
+      if (i === -1) throw appError('NOT_FOUND', 'That item is not in Up Next.');
+      const j = direction === 'up' ? i - 1 : i + 1;
+      if (j < 0 || j >= ids.length) return;
+      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [j, id]);
+      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [i, ids[j] ?? '']);
+    });
+    return this.upNext();
+  }
+
+  /* ---------------------------------------------------------------- pick for me */
+
+  /** A random Planned item not already in Up Next (optionally limited to some types), for "Pick something for me". */
+  pickRandom(types: readonly MediaType[], excludeId: string | null): ItemSummary | null {
+    // Items already in Up Next are skipped: the user has already decided on those.
+    const where = [`i.status = 'planned'`, 'i.up_next_position IS NULL', 'i.id <> ?'];
+    const params: (string | number)[] = [excludeId ?? ''];
+    if (types.length > 0) {
+      where.push(`i.type IN (${types.map(() => '?').join(',')})`);
+      params.push(...types);
+    }
+    return items.summariesWhere(this.db, where.join(' AND '), params, 'ORDER BY random() LIMIT 1')[0] ?? null;
+  }
+
+  /* ---------------------------------------------------------------- year in review */
+
+  yearStats(): DashboardData['yearStats'] {
+    const db = this.db;
+    const year = this.ctx.clock.now().getFullYear();
+    const from = `${year}-01-01`;
+    const completedByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
+    for (const r of db.all<{ type: MediaType; n: number }>(
+      `SELECT type, count(*) AS n FROM items
+       WHERE deleted_at IS NULL AND status = 'completed' AND date_completed >= ? GROUP BY type`,
+      [from],
+    ))
+      completedByType[r.type] = r.n;
+    const n = (sql: string) => db.get<{ n: number }>(sql, [from])?.n ?? 0;
+    return {
+      year,
+      completedByType,
+      completedTotal: Object.values(completedByType).reduce((a, b) => a + b, 0),
+      added: n('SELECT count(*) AS n FROM items WHERE deleted_at IS NULL AND date_added >= ?'),
+      episodesWatched: n(
+        `SELECT count(*) AS n FROM episodes e JOIN items i ON i.id = e.item_id
+         WHERE i.deleted_at IS NULL AND e.watched = 1 AND e.watched_at >= ?`,
+      ),
+      viewings: n(
+        `SELECT count(*) AS n FROM viewing_events v JOIN items i ON i.id = v.item_id
+         WHERE i.deleted_at IS NULL AND COALESCE(v.watched_at, v.created_at) >= ?`,
+      ),
+      progressEntries: n(
+        `SELECT count(*) AS n FROM progress_events p JOIN items i ON i.id = p.item_id
+         WHERE p.deleted_at IS NULL AND i.deleted_at IS NULL AND COALESCE(p.occurred_at, p.recorded_at) >= ?`,
+      ),
     };
   }
 

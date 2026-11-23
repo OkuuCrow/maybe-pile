@@ -7,11 +7,13 @@ import { createFetchClient } from '../src/providers/http';
 import { RateLimiter } from '../src/providers/rate-limiter';
 import { openLibraryProvider } from '../src/providers/openlibrary';
 import { tvmazeProvider } from '../src/providers/tvmaze';
+import { wikidataProvider } from '../src/providers/wikidata';
+import { anilistProvider } from '../src/providers/anilist';
 import type { MetadataProvider } from '../src/providers/types';
 
 const http = createFetchClient((url, init) => fetch(url, init));
 
-async function check(p: MetadataProvider, type: 'tv' | 'book', query: string) {
+async function check(p: MetadataProvider, type: 'movie' | 'tv' | 'game' | 'book', query: string) {
   const ctx = { http, limiter: new RateLimiter(p.rateLimit), keys: {}, region: 'US' };
   const t0 = Date.now();
   const s = await p.search({ type, query, year: null }, ctx);
@@ -33,3 +35,10 @@ async function check(p: MetadataProvider, type: 'tv' | 'book', query: string) {
 
 await check(tvmazeProvider, 'tv', 'Severance');
 await check(openLibraryProvider, 'book', 'Piranesi Susanna Clarke');
+await check(wikidataProvider, 'movie', 'Inception');
+await check(wikidataProvider, 'game', 'Hades');
+await check(wikidataProvider, 'tv', 'Breaking Bad');
+await check(wikidataProvider, 'book', 'Piranesi');
+await check(anilistProvider, 'tv', 'Frieren');
+await check(anilistProvider, 'movie', 'Spirited Away');
+await check(anilistProvider, 'book', 'Berserk');

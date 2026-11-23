@@ -13,11 +13,14 @@ export const LAYOUT_MAX_BYTES = 32 * 1024;
 
 export const DASHBOARD_COMPONENTS = [
   'counts',
+  'upNext',
   'continue',
+  'pick',
   'recentlyUpdated',
   'recentlyAdded',
   'recentlyCompleted',
   'activity',
+  'yearStats',
   'tags',
 ] as const;
 export const LIBRARY_COMPONENTS = [
@@ -35,6 +38,9 @@ export type LayoutSurface = 'dashboard' | 'library';
 
 export const COMPONENT_LABELS: Record<DashboardComponentId | LibraryComponentId, string> = {
   counts: 'Library counts',
+  upNext: 'Up Next queue',
+  pick: 'Pick something for me',
+  yearStats: 'This year',
   continue: 'Continue (in progress)',
   recentlyUpdated: 'Recently updated',
   recentlyAdded: 'Recently added',
@@ -58,12 +64,15 @@ export interface LayoutEntry {
 export const DEFAULT_LAYOUTS: Record<LayoutSurface, LayoutEntry[]> = {
   dashboard: [
     { id: 'counts', visible: true, span: 2 },
+    { id: 'upNext', visible: true, span: 1 },
+    { id: 'pick', visible: true, span: 1 },
     { id: 'continue', visible: true, span: 2 },
     { id: 'recentlyUpdated', visible: true, span: 1 },
     { id: 'recentlyAdded', visible: true, span: 1 },
     { id: 'recentlyCompleted', visible: true, span: 1 },
     { id: 'activity', visible: true, span: 1 },
-    { id: 'tags', visible: true, span: 2 },
+    { id: 'yearStats', visible: true, span: 1 },
+    { id: 'tags', visible: true, span: 1 },
   ],
   library: LIBRARY_COMPONENTS.map((id) => ({ id, visible: true, span: 1 as const })),
 };

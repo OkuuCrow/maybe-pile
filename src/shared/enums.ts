@@ -51,6 +51,9 @@ export const EXTERNAL_ID_KINDS = [
   'steam',
   'xbox',
   'playstation',
+  'wikidata',
+  'anilist',
+  'mal',
 ] as const;
 export type ExternalIdKind = (typeof EXTERNAL_ID_KINDS)[number];
 

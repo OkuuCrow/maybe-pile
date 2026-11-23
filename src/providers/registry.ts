@@ -1,15 +1,20 @@
 /** The list of available metadata providers, in display order. */
+import { anilistProvider } from './anilist';
 import { igdbProvider } from './igdb';
 import { openLibraryProvider } from './openlibrary';
 import { tmdbProvider } from './tmdb';
 import { tvmazeProvider } from './tvmaze';
 import type { MetadataProvider } from './types';
+import { wikidataProvider } from './wikidata';
 
 export const PROVIDERS: readonly MetadataProvider[] = [
+  // Order matters: the Add dialog defaults to the first ready (keyless or configured) source per type.
   tmdbProvider,
   tvmazeProvider,
-  igdbProvider,
   openLibraryProvider,
+  wikidataProvider,
+  anilistProvider,
+  igdbProvider,
 ];
 
 export function getProvider(id: string): MetadataProvider | undefined {
@@ -30,4 +35,7 @@ export const OUTBOUND_HOSTS = [
   'id.twitch.tv',
   'api.igdb.com',
   'images.igdb.com',
+  'www.wikidata.org',
+  'graphql.anilist.co',
+  's4.anilist.co',
 ] as const;

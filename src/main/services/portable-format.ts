@@ -33,6 +33,8 @@ export const ExportItemSchema = z.object({
   type: z.enum(MEDIA_TYPES),
   meta: MetadataFieldsSchema,
   personal: PersonalFieldsSchema,
+  /** Up Next queue position (added in app 1.1; optional so older exports still import). */
+  upNextPosition: z.number().int().min(0).nullable().optional(),
   pass: z.number().int().min(1).max(1000),
   createdAt: ts,
   updatedAt: ts,

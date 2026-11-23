@@ -33,7 +33,7 @@ describe('migrations', () => {
   it('creates a fresh database at the latest version', () => {
     const db = newDb();
     const r = migrate(db);
-    expect(r).toEqual({ from: 0, to: LATEST_SCHEMA_VERSION, applied: [1, 2] });
+    expect(r).toEqual({ from: 0, to: LATEST_SCHEMA_VERSION, applied: MIGRATIONS.map((m) => m.version) });
     expect(currentSchemaVersion(db)).toBe(LATEST_SCHEMA_VERSION);
     for (const t of [
       'items',
@@ -53,7 +53,7 @@ describe('migrations', () => {
   it('is idempotent', () => {
     const db = newDb();
     migrate(db);
-    expect(migrate(db)).toEqual({ from: 2, to: 2, applied: [] });
+    expect(migrate(db)).toEqual({ from: LATEST_SCHEMA_VERSION, to: LATEST_SCHEMA_VERSION, applied: [] });
   });
 
   it('applies each migration in order and records checksums', () => {
@@ -65,7 +65,7 @@ describe('migrations', () => {
     const rows = db.all<{ version: number; checksum: string }>(
       'SELECT version, checksum FROM schema_migrations ORDER BY version',
     );
-    expect(rows.map((r) => r.version)).toEqual([1, 2]);
+    expect(rows.map((r) => r.version)).toEqual(MIGRATIONS.map((m) => m.version));
     expect(rows[1]?.checksum).toBe(checksum(MIGRATIONS[1]?.sql ?? ''));
   });
 
@@ -89,7 +89,7 @@ describe('migrations', () => {
 
     const backups: [number, number][] = [];
     migrate(db, { beforeMigrate: (f, t) => backups.push([f, t]) });
-    expect(backups).toEqual([[1, 2]]);
+    expect(backups).toEqual([[1, LATEST_SCHEMA_VERSION]]);
     expect(db.get('SELECT title, notes FROM items')).toEqual({
       title: 'Pokémon Adventures',
       notes: 'borrowed from Sam',
@@ -109,7 +109,34 @@ describe('migrations', () => {
     expect(currentSchemaVersion(db)).toBe(1);
     expect(tables(db)).not.toContain('items_fts');
     expect(tables(db)).not.toContain('audit_entries');
-    expect(migrate(db).applied).toEqual([2]);
+    expect(migrate(db).applied).toEqual(MIGRATIONS.map((m) => m.version).slice(1));
+  });
+
+  it('upgrades v2 → v3 keeping external IDs and adding the Up Next column and new ID kinds', () => {
+    const db = newDb();
+    migrate(db, { migrations: MIGRATIONS.slice(0, 2) });
+    const now = '2024-01-02T03:04:05.000Z';
+    const id = '22222222-2222-4222-8222-222222222222';
+    db.run(
+      `INSERT INTO items (id, type, title, sort_title, title_key, status, date_added, created_at, updated_at)
+       VALUES (?, 'movie', 'Heat', 'heat', 'heat', 'planned', '2024-01-02', ?, ?)`,
+      [id, now, now],
+    );
+    db.run("INSERT INTO external_ids (item_id, kind, value) VALUES (?, 'imdb', 'tt0113277')", [id]);
+    expect(() =>
+      db.run("INSERT INTO external_ids (item_id, kind, value) VALUES (?, 'wikidata', 'Q1')", [id]),
+    ).toThrow(/CHECK/);
+    migrate(db);
+    expect(db.all('SELECT kind, value FROM external_ids')).toEqual([{ kind: 'imdb', value: 'tt0113277' }]);
+    db.run("INSERT INTO external_ids (item_id, kind, value) VALUES (?, 'wikidata', 'Q1')", [id]);
+    expect(
+      db.get<{ up_next_position: number | null }>('SELECT up_next_position FROM items')?.up_next_position,
+    ).toBeNull();
+    expect(() => db.run('UPDATE items SET up_next_position = -1')).toThrow(/CHECK/);
+    // the rebuilt table still cascades on delete
+    db.run('DELETE FROM items WHERE id = ?', [id]);
+    expect(db.all('SELECT * FROM external_ids')).toEqual([]);
+    expect(db.foreignKeyViolations()).toBe(0);
   });
 
   it('refuses a database whose schema is newer than the app', () => {

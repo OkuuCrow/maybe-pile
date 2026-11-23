@@ -2,12 +2,13 @@
 
 **Someday, maybe. Now organized.**
 
-Maybe Pile is a local-first desktop app for the movies, TV shows, video games and books you mean to get to, are deep into, or have finished. It runs on Windows, macOS and Linux and works fully offline. Your data stays on your computer in open formats, with no account and no telemetry.
+Maybe Pile is a local-first desktop app for the movies, TV shows, video games and books you mean to get to, are deep into, or have finished. It runs on Windows, macOS and Linux, works fully offline, and keeps your library on your computer in open formats.
 
 - Track items as **Planned, In Progress, Completed, On Hold or Dropped**, with ratings (half-star), notes, tags, custom fields and dates.
 - Progress that fits each medium: **movie viewings**, **TV seasons and episodes** (specials, unknown totals, "up to here"), **game progress schemes** (percent, hours, milestones, free text), and **book pages, percent or audiobook time** (unknown or changing page counts are fine). Every update is kept in an editable history.
-- **Search online sources** (TMDB, TVmaze, Open Library, IGDB), preview, and import. Or enter everything by hand. Refresh metadata later and choose per field what to keep; your edits are never silently overwritten.
+- **Search online sources**, preview, and import. Wikidata, TVmaze, Open Library and AniList need no setup and cover every media type; TMDB and IGDB are optional extras with free API keys. Or enter everything by hand. Refresh metadata later and choose per field what to keep; your edits are never silently overwritten.
 - **Search, filter (type, status, tags, rating, date added) and sort** large libraries instantly. Bulk actions and duplicate detection are included.
+- **Up Next** queue for what to start soon, **Pick something for me** when you can't decide, and a **This year** summary on the dashboard.
 - **Themes and layouts** you can edit, share and reset. Accessible by design (keyboard, screen readers, WCAG AA contrast).
 - **Backups** (`.mpbackup`), **JSON/CSV export and import** with preview and conflict handling, and safe moves between Windows, macOS and Linux.
 
@@ -62,7 +63,8 @@ See [docs/packaging.md](docs/packaging.md) for prerequisites, signing and notari
 3. **Find things:** in **Library**, type to search titles, creators, notes and tags. Open **Filters** for type, status, tags, rating and date added. Remove filters with the chips or **Clear all filters**.
 4. **Make it yours:** Settings → **Appearance** (duplicate a built-in theme and edit its colours, with live preview and a contrast check) and **Layout** (reorder and hide dashboard and library components).
 5. **Keep it safe:** Settings → **Backup & Restore** → **Create backup…**. Restoring shows a preview and asks you to type `RESTORE`; your previous library is snapshotted first.
-6. **Online sources:** TVmaze and Open Library need no setup. TMDB and IGDB need free API keys: Settings → **Providers** (see [docs/providers.md](docs/providers.md)).
+6. **Online sources:** Wikidata, TVmaze, Open Library and AniList need no setup. TMDB and IGDB are optional and need free API keys: Settings → **Providers** (see [docs/providers.md](docs/providers.md)).
+7. **Decide what's next:** add items to **Up Next** from their page (or select several in the Library), reorder the queue on the dashboard, or press **Pick for me** for a random Planned item.
 
 Press `?` at any time for keyboard shortcuts.
 

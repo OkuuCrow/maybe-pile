@@ -16,6 +16,7 @@ import { appError } from '../shared/result';
 import type { Db } from './connection';
 import { migration0001 } from './migrations/0001_core';
 import { migration0002 } from './migrations/0002_search_and_audit';
+import { migration0003 } from './migrations/0003_up_next_and_ids';
 
 export interface Migration {
   version: number;
@@ -23,7 +24,7 @@ export interface Migration {
   sql: string;
 }
 
-export const MIGRATIONS: readonly Migration[] = [migration0001, migration0002];
+export const MIGRATIONS: readonly Migration[] = [migration0001, migration0002, migration0003];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.length;
 
 export function checksum(sql: string): string {

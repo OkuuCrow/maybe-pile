@@ -173,6 +173,9 @@ export function buildHandlers(d: HandlerDeps): Handlers {
     'items:dashboard': () => d.library.dashboard(),
     'items:tags': () => d.catalog.tags(),
     'items:audit': ({ id }) => d.catalog.audit(id),
+    'items:setUpNext': ({ id, queued }) => d.library.setUpNext(id, queued),
+    'items:moveUpNext': ({ id, direction }) => d.library.moveUpNext(id, direction),
+    'items:pickRandom': ({ types, excludeId }) => d.library.pickRandom(types, excludeId),
 
     'progress:add': (p) => d.progress.add(p),
     'progress:edit': (p) => d.progress.edit(p),

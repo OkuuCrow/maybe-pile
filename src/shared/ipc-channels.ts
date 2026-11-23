@@ -36,6 +36,9 @@ export const API_SHAPE = {
     dashboard: 'items:dashboard',
     tags: 'items:tags',
     audit: 'items:audit',
+    setUpNext: 'items:setUpNext',
+    moveUpNext: 'items:moveUpNext',
+    pickRandom: 'items:pickRandom',
   },
   progress: {
     add: 'progress:add',

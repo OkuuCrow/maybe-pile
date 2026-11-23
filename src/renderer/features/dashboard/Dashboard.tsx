@@ -7,6 +7,7 @@ import { useApp } from '../../app/context';
 import { S, fmtPartialDate, statusLabel, typeLabelPlural } from '../../app/strings';
 import { Cover, EmptyState, ErrorBox, Loading, ProgressBar, StatusBadge } from '../../components/Bits';
 import { TypeIcon } from '../../components/Icons';
+import { PickWidget, UpNextWidget, YearStatsWidget } from './Widgets';
 
 export function Dashboard() {
   const app = useApp();
@@ -140,6 +141,12 @@ function renderWidget(id: string, d: DashboardData): ReactNode {
       );
     case 'activity':
       return <Activity d={d} />;
+    case 'upNext':
+      return <UpNextWidget items={d.upNext} />;
+    case 'pick':
+      return <PickWidget plannedCount={d.countsByStatus.planned} />;
+    case 'yearStats':
+      return <YearStatsWidget s={d.yearStats} />;
     case 'tags':
       return (
         <>

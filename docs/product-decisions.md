@@ -52,6 +52,12 @@ Ratings are stored as an integer **1–10** and shown as **0.5–5 stars in half
 
 Likely duplicates are found when adding or importing: **same type**, plus either the same provider/ISBN/Steam ID, or the same normalized title (accent- and case-folded, punctuation removed, leading "The/A/An" dropped) with a compatible year (equal, or either unknown). You choose *Open existing*, *Add anyway* or *Cancel*.
 
+## Up Next, Pick for me, This year (added in 1.1)
+
+- **Up Next** is a short queue you order yourself (positions 1..n). Add from an item's page, from the Library bulk bar, or from a pick. Reorder or remove from the dashboard widget with buttons; keyboard focus stays on the moved item. Items leave the queue automatically when marked **Completed** or **Dropped**; other status changes keep them. Bulk add skips completed, dropped and already-queued items. The queue is included in backups and JSON exports.
+- **Pick something for me** chooses uniformly at random among **Planned** items that aren't already in Up Next, optionally limited to one media type. *Pick again* never repeats the previous pick immediately (when there is another option). Picking changes nothing until you choose *Add to Up Next* or open the item.
+- **This year** counts, for the current calendar year (local time): items finished (by `date_completed`), items added, episodes watched (episode `watched_at`), movie viewings and progress entries. It is derived from real data only.
+
 ## Deletion and undo
 
 Deleting soft-deletes: the item disappears everywhere immediately, and a toast offers **Undo** for 10 seconds. Soft-deleted items are **purged permanently at the next app start**, together with orphaned tags, genres, creators and artwork files. They are never included in exports or backups. Deleting more than one item requires typing `DELETE`.

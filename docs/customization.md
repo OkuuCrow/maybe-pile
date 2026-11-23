@@ -87,13 +87,13 @@ Complete example: [`examples/focused.mplayout.json`](../examples/focused.mplayou
 
 | Surface | Component IDs | Settings |
 | --- | --- | --- |
-| `dashboard` | `counts`, `continue`, `recentlyUpdated`, `recentlyAdded`, `recentlyCompleted`, `activity`, `tags` | `visible` (bool), optional `span` (`1` half width, `2` full width) |
+| `dashboard` | `counts`, `upNext`, `pick`, `continue`, `recentlyUpdated`, `recentlyAdded`, `recentlyCompleted`, `activity`, `yearStats`, `tags` | `visible` (bool), optional `span` (`1` half width, `2` full width) |
 | `library` | `search`, `filters`, `sort`, `viewToggle`, `statusStrip`, `bulkBar` | `visible` (bool) |
 
 Rules:
 - Only these IDs and settings are allowed. Unknown IDs or keys, duplicates, wrong types and oversized arrays are rejected. Maximum file size is 32 KB.
 - Order in the array is display order.
-- **Repair:** a layout missing some components (for example, written by an older version) is accepted. The missing components are appended with their defaults, and the app shows a notice naming them.
+- **Repair:** an imported layout missing some components (for example, written by an older version) is accepted. The missing components are appended with their defaults, and the app shows a notice naming them. Saved layouts get components added by app updates (such as `upNext`, `pick` and `yearStats` in 1.1) appended silently.
 - Settings → Layout has an accessible list editor (Move up/Move down buttons that keep focus, Visible checkboxes, width select), a one-click **Reset both to defaults**, and import/export.
 
 ## Versioning and migration policy

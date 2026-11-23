@@ -673,6 +673,15 @@ export class ImportService {
         );
       }
     }
+    if (
+      it.upNextPosition !== undefined &&
+      it.upNextPosition !== null &&
+      !['completed', 'dropped'].includes(it.personal.status)
+    ) {
+      // Imported queue entries go after the existing queue, keeping their relative order.
+      const max = db.get<{ p: number | null }>('SELECT max(up_next_position) AS p FROM items')?.p ?? -1;
+      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [max + 1, id]);
+    }
     if (it.artwork) this.attachArtwork(id, it.artwork, now);
     items.reindexItem(db, id);
     items.recomputeProgress(db, id);

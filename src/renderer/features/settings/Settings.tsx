@@ -541,7 +541,13 @@ function LayoutEditor({
     n[j] = a;
     onChange(n);
     // Keep focus on the moved row's same button.
-    setTimeout(() => document.getElementById(`${id}-${a.id}-${d === -1 ? 'up' : 'down'}`)?.focus(), 30);
+    setTimeout(() => {
+      const same = document.getElementById(
+        `${id}-${a.id}-${d === -1 ? 'up' : 'down'}`,
+      ) as HTMLButtonElement | null;
+      const other = document.getElementById(`${id}-${a.id}-${d === -1 ? 'down' : 'up'}`);
+      (same && !same.disabled ? same : other)?.focus();
+    }, 30);
   };
   return (
     <fieldset className="layout-editor card">
@@ -618,10 +624,7 @@ function ProvidersTab() {
   const providers = useAsync(() => call(getApi().providers.list()), []);
   return (
     <div>
-      <p>
-        Online sources are optional — everything works offline and you can always add items manually. Lookups
-        go directly from your computer to the provider; there is no Maybe Pile server.
-      </p>
+      <p>Online sources are optional — everything works offline and you can always add items manually.</p>
       {app.info?.secretStorage === 'plaintext-fallback' && (
         <Notice kind="warning">
           Your system has no secure key storage available (for example, no keyring on Linux). API keys you
@@ -1218,8 +1221,7 @@ function AboutTab() {
         ))}
       </ul>
       <p className="muted">
-        No accounts, no telemetry. The app only contacts the online sources listed above, and only when you
-        search, import, refresh or check availability.
+        Online sources are only contacted when you search, import, refresh or check availability.
       </p>
       <button type="button" className="button" onClick={() => app.setShortcutsOpen(true)}>
         Keyboard shortcuts

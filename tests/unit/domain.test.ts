@@ -401,7 +401,7 @@ describe('layouts', () => {
     const r = repairLayout('dashboard', [{ id: 'tags', visible: false, span: 1 }]);
     expect(r.entries[0]).toEqual({ id: 'tags', visible: false, span: 1 });
     expect(r.entries).toHaveLength(DEFAULT_LAYOUTS.dashboard.length);
-    expect(r.notices[0]).toMatch(/missing 6 component/);
+    expect(r.notices[0]).toMatch(new RegExp(`missing ${DEFAULT_LAYOUTS.dashboard.length - 1} component`));
   });
 });
 

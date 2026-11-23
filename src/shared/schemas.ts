@@ -284,6 +284,7 @@ export const BulkActionSchema = z.discriminatedUnion('action', [
     tag: requiredText(LIMITS.tag, 'Tag'),
   }),
   z.strictObject({ action: z.literal('delete'), ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds) }),
+  z.strictObject({ action: z.literal('addUpNext'), ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds) }),
 ]);
 export type BulkActionInput = z.infer<typeof BulkActionSchema>;
 

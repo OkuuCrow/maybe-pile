@@ -42,6 +42,7 @@ export function exportItem(db: Db, id: string): ExportItem | null {
     meta: d.meta,
     personal: { ...d.personal, customFields: [] },
     pass: d.pass,
+    upNextPosition: d.upNextPosition,
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
     provenance: Object.fromEntries(

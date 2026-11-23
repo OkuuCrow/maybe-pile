@@ -110,3 +110,35 @@ The CI workflow (`.github/workflows/ci.yml`) was **written but not executed**. N
 - Running the NSIS installer/uninstaller and the portable exe end to end (OS policy and side effects).
 - macOS/Linux builds and runs; code signing and notarization.
 - Live TMDB/IGDB requests.
+
+---
+
+## Version 1.1.0 update
+
+Changes: two new keyless providers (Wikidata, AniList), Up Next queue, "Pick something for me", "This year" dashboard stats, schema migration v3, and softer privacy wording in the UI and README.
+
+| Command | Result |
+| --- | --- |
+| `npm run format:check` / `npm run lint` / `npm run typecheck` | ✅ all clean |
+| `npm test` | ✅ **11 files, 281 tests passed** (adds keyless-provider tests, Up Next/pick/stats tests, v2→v3 migration test, Up Next UI + axe test) |
+| `npm run test:e2e` | ✅ 1 passed (37 s), full acceptance flow unchanged |
+| `npm audit --omit=dev` | ✅ 0 vulnerabilities |
+| `npm run smoke:providers` (live network) | ✅ See below |
+
+Live keyless provider check (real APIs):
+
+```
+wikidata  "Inception"     → Inception (2010) Q25188; date 2010-07-08; Christopher Nolan + cast; ids imdb:tt1375666, tmdb:27205
+wikidata  "Hades" (game)  → Hades (2018) Q59756366; Supergiant Games; ids steam:1145360
+wikidata  "Breaking Bad"  → Breaking Bad (2008) Q1079; Vince Gilligan + cast; ids imdb:tt0903747, tmdb:1396
+wikidata  "Piranesi"      → Piranesi (2020) Q99434216; Susanna Clarke
+anilist   "Frieren" (TV)  → Frieren: Beyond Journey's End (2023); 1 season, 28 episodes; ids anilist:154587, mal:52991; cover
+anilist   "Spirited Away" → Spirited Away (2001); Hayao Miyazaki; ids anilist:199, mal:199; cover
+anilist   "Berserk" (book)→ Berserk (1989); Kentarou Miura; ids anilist:30002, mal:2; cover
+```
+
+Evaluated and rejected: **Google Books** without an API key returned HTTP 429 on every request (3 attempts), so it isn't a usable keyless source.
+
+Bugs found by the new tests and fixed: Up Next/layout reorder lost keyboard focus when an item reached the top or bottom (the button it was on became disabled); AniList role strings with qualifiers ("Story & Art (vols 1-41)") dropped manga authors; AniList counted every "… Director" credit as a director; Wikidata TV listed every episode director as a creator.
+
+Windows installers were **not** rebuilt for 1.1.0 (they are build output, not stored in git); run `npm run dist:win` to produce them.

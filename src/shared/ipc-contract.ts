@@ -19,6 +19,7 @@ import {
   ItemCreateSchema,
   ItemUpdateSchema,
   LibraryQuerySchema,
+  MediaTypeSchema,
   MilestonesSetSchema,
   OpenExternalSchema,
   ProviderKeySchema,
@@ -49,6 +50,7 @@ import type {
   ImportPreviewView,
   ImportResultView,
   ItemDetail,
+  ItemSummary,
   LayoutsView,
   LibraryPage,
   MutationOutcome,
@@ -118,6 +120,12 @@ export const REQUEST_SCHEMAS = {
   'items:dashboard': none,
   'items:tags': none,
   'items:audit': byId,
+  'items:setUpNext': z.strictObject({ id: IdSchema, queued: z.boolean() }),
+  'items:moveUpNext': z.strictObject({ id: IdSchema, direction: z.enum(['up', 'down']) }),
+  'items:pickRandom': z.strictObject({
+    types: z.array(MediaTypeSchema).max(4),
+    excludeId: IdSchema.nullable(),
+  }),
 
   'progress:add': AddProgressSchema,
   'progress:edit': EditProgressSchema,
@@ -234,6 +242,9 @@ export interface ResponseTypes {
   'items:dashboard': DashboardData;
   'items:tags': TagCount[];
   'items:audit': AuditEntryView[];
+  'items:setUpNext': ItemDetail;
+  'items:moveUpNext': DashboardData['upNext'];
+  'items:pickRandom': ItemSummary | null;
   'progress:add': MutationOutcome;
   'progress:edit': MutationOutcome;
   'progress:remove': MutationOutcome;

@@ -1448,3 +1448,73 @@ code.path {
 a.button {
   text-decoration: none;
 }
+
+/* ---------- Up Next, pick, year stats ---------- */
+
+.upnext-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 4px;
+}
+.upnext-item {
+  display: flex;
+  align-items: center;
+  gap: var(--mp-space);
+  border-bottom: 1px solid var(--mp-surface-alt);
+  padding: 2px 0;
+}
+.upnext-pos {
+  min-width: 1.6em;
+  font-weight: 700;
+  color: var(--mp-text-muted);
+  text-align: right;
+}
+.upnext-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.upnext-actions {
+  display: flex;
+  gap: 2px;
+}
+.pick-result {
+  margin-top: var(--mp-space);
+}
+.pick-card {
+  display: flex;
+  gap: var(--mp-space);
+  padding: var(--mp-space);
+  border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius);
+}
+.pick-text {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  justify-items: start;
+}
+.year-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--mp-space);
+  margin: 0 0 var(--mp-space);
+}
+.year-stats div {
+  border: 1px solid var(--mp-border);
+  border-radius: var(--mp-radius);
+  padding: 6px 10px;
+}
+.year-stats dt {
+  font-size: 0.85rem;
+  color: var(--mp-text-muted);
+}
+.year-stats dd {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+}

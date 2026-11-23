@@ -90,6 +90,9 @@ const EXT_LABELS: Record<ExternalIdKind, string> = {
   steam: 'Steam app ID or store URL',
   xbox: 'Xbox store URL',
   playstation: 'PlayStation Store URL',
+  wikidata: 'Wikidata ID (Q…)',
+  anilist: 'AniList ID',
+  mal: 'MyAnimeList ID',
 };
 
 /** Maps a schema/server path like "meta.title" to the form control id. */

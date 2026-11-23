@@ -707,6 +707,19 @@ function BulkBar({
           </button>
           <button
             type="button"
+            className="button button-small"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => call(getApi().items.bulk({ action: 'addUpNext', ids })),
+                'Added to Up Next (completed and dropped items are skipped).',
+              )
+            }
+          >
+            Add to Up Next
+          </button>
+          <button
+            type="button"
             className="button button-small button-danger"
             disabled={busy}
             onClick={() => setConfirm(true)}

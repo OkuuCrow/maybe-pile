@@ -1,6 +1,6 @@
 # Data model
 
-The schema is defined by `src/db/migrations/0001_core.ts` and `0002_search_and_audit.ts`. Foreign keys are on (`PRAGMA foreign_keys = ON`), the journal is WAL, `synchronous = NORMAL`, and `busy_timeout` is 5 s. CHECK constraints mirror the enums in `src/shared/enums.ts` as a last line of defence; the services validate first.
+The schema is defined by `src/db/migrations/0001_core.ts`, `0002_search_and_audit.ts` and `0003_up_next_and_ids.ts`. Foreign keys are on (`PRAGMA foreign_keys = ON`), the journal is WAL, `synchronous = NORMAL`, and `busy_timeout` is 5 s. CHECK constraints mirror the enums in `src/shared/enums.ts` as a last line of defence; the services validate first.
 
 ## ER diagram
 
@@ -41,12 +41,12 @@ All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (
 
 | Table | Purpose / notes |
 | --- | --- |
-| `items` | One row per media item. `rid` is an INTEGER PRIMARY KEY, which is stable across VACUUM and is the FTS rowid. `id` is a UUID used everywhere else. `sort_title` (articles dropped, numbers zero-padded) and `title_key` (folded) support sorting and duplicate detection. `rating` is 1–10 half-stars. `pass` counts re-watch/re-read runs. `progress_pct`/`progress_label` are a **cached derivation**, recomputed in the same transaction as every progress or metadata change, so lists can sort by progress. `deleted_at` holds soft-deleted items (undo); they are purged at next startup. |
+| `items` | One row per media item. `up_next_position` (v3) is the 0-based Up Next queue position, or NULL when not queued. `rid` is an INTEGER PRIMARY KEY, which is stable across VACUUM and is the FTS rowid. `id` is a UUID used everywhere else. `sort_title` (articles dropped, numbers zero-padded) and `title_key` (folded) support sorting and duplicate detection. `rating` is 1–10 half-stars. `pass` counts re-watch/re-read runs. `progress_pct`/`progress_label` are a **cached derivation**, recomputed in the same transaction as every progress or metadata change, so lists can sort by progress. `deleted_at` holds soft-deleted items (undo); they are purged at next startup. |
 | `item_alt_titles` | Ordered alternate titles. |
 | `creators`, `item_creators` | Creator names (unique by folded name) and roles (director, writer, cast, creator, developer, publisher, author, translator, narrator, illustrator). |
 | `genres`, `item_genres` | Genre lookups. |
 | `tags`, `item_tags` | Tags are unique case- and accent-insensitively via `name_key`; the first spelling is kept. |
-| `external_ids` | One row per kind: `tmdb, imdb, tvmaze, openlibrary, isbn10, isbn13, igdb, steam, xbox, playstation`. Store kinds hold an app ID (Steam) or an allowlisted URL. Indexed by `(kind, value)` for duplicate detection. |
+| `external_ids` | One row per kind: `tmdb, imdb, tvmaze, openlibrary, isbn10, isbn13, igdb, steam, xbox, playstation, wikidata, anilist, mal` (the last three added in v3, which rebuilt the table to widen its CHECK constraint). Store kinds hold an app ID (Steam) or an allowlisted URL. Indexed by `(kind, value)` for duplicate detection. |
 | `item_sources` | Provider, provider ref, URL and `fetched_at` for attribution and refresh. |
 | `field_provenance` | Per metadata field: `origin` (`provider` \| `user` \| `manual-entry`), `provider_id`, `provider_value` (canonical JSON of the provider's last value), `updated_at`. |
 | `custom_field_defs`, `custom_field_options`, `custom_field_values` | User-defined fields of type text, number, date, boolean or select. Values use `text_value` *or* `number_value` (CHECK exactly one). Booleans are 0/1; dates are text `YYYY-MM-DD`. |

@@ -109,10 +109,13 @@ export function readLayout(db: Db, surface: LayoutSurface): { entries: LayoutEnt
     [surface],
   );
   if (rows.length === 0) return { entries: DEFAULT_LAYOUTS[surface].map((e) => ({ ...e })), notices: [] };
-  return repairLayout(
+  // Components introduced by newer app versions are appended silently; notices are
+  // reserved for imported layout files, where missing entries indicate a problem.
+  const repaired = repairLayout(
     surface,
     rows.map((r) => ({ id: r.component_id, visible: i2b(r.visible), span: r.span === 2 ? 2 : 1 })),
   );
+  return { entries: repaired.entries, notices: [] };
 }
 
 export function writeLayout(db: Db, surface: LayoutSurface, entries: readonly LayoutEntry[]): void {

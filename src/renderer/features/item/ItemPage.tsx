@@ -300,6 +300,25 @@ export function ItemPage({ id }: { id: string }) {
               <button type="button" className="button button-primary" onClick={() => setEditing(true)}>
                 Edit details
               </button>
+              {(item.upNextPosition !== null ||
+                (item.personal.status !== 'completed' && item.personal.status !== 'dropped')) && (
+                <button
+                  type="button"
+                  className="button"
+                  aria-pressed={item.upNextPosition !== null}
+                  onClick={() =>
+                    void run(
+                      () =>
+                        call(getApi().items.setUpNext({ id: item.id, queued: item.upNextPosition === null })),
+                      item.upNextPosition === null ? 'Added to Up Next.' : 'Removed from Up Next.',
+                    )
+                  }
+                >
+                  {item.upNextPosition === null
+                    ? 'Add to Up Next'
+                    : `Up Next #${item.upNextPosition + 1} — remove`}
+                </button>
+              )}
               {hasSource && (
                 <button type="button" className="button" onClick={() => setRefreshOpen(true)}>
                   <IconRefresh /> Refresh metadata…

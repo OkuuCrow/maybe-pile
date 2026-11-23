@@ -208,6 +208,39 @@ describe('item detail', () => {
   });
 });
 
+describe('Up Next, pick and year stats', () => {
+  it('a11y: queue an item from its page, see it on the dashboard, reorder and pick', async () => {
+    const { book, movie } = seed(env);
+    const user = userEvent.setup();
+    renderApp(`#/item/${book.id}`);
+    await user.click(await screen.findByRole('button', { name: 'Add to Up Next' }));
+    expect(await screen.findByRole('button', { name: /Up Next #1 — remove/ })).toBeTruthy();
+    env.library.setUpNext(movie.id, true);
+    cleanup();
+    renderApp('#/dashboard');
+    const queue = await screen.findByRole('heading', { name: 'Up Next' });
+    const list = queue.parentElement?.querySelector('ol') as HTMLElement;
+    expect(
+      within(list)
+        .getAllByRole('link')
+        .map((l) => l.textContent),
+    ).toEqual(['Piranesi', 'Arrival']);
+    await user.click(within(list).getByRole('button', { name: 'Move Arrival up' }));
+    await waitFor(() =>
+      expect(
+        within(list)
+          .getAllByRole('link')
+          .map((l) => l.textContent),
+      ).toEqual(['Arrival', 'Piranesi']),
+    );
+    await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('Move Arrival down')); // focus kept on the moved item
+    await user.click(screen.getByRole('button', { name: 'Pick for me' }));
+    expect(await screen.findByRole('button', { name: 'Pick again' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: /This year/ })).toBeTruthy();
+    await expectNoAxeViolations();
+  });
+});
+
 describe('settings', () => {
   it.each(['appearance', 'layout', 'providers', 'library', 'backup', 'data', 'about'])(
     'a11y: %s tab has no violations',

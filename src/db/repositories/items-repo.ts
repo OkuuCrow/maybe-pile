@@ -56,6 +56,7 @@ export interface ItemRow {
   date_started: string | null;
   date_completed: string | null;
   pass: number;
+  up_next_position: number | null;
   artwork_id: string | null;
   progress_pct: number | null;
   progress_label: string;
@@ -731,6 +732,7 @@ export function loadDetail(db: Db, id: string): ItemDetail | null {
     meta,
     personal: loadPersonal(db, row),
     pass: row.pass,
+    upNextPosition: row.up_next_position,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     artwork: artworkView(art),
@@ -918,7 +920,21 @@ export function findDuplicates(
   const out = new Map<string, DuplicateMatch>();
   const exclude = input.excludeId ?? '';
   for (const e of input.externalIds) {
-    if (!['tmdb', 'imdb', 'tvmaze', 'openlibrary', 'igdb', 'isbn13', 'isbn10', 'steam'].includes(e.kind))
+    if (
+      ![
+        'tmdb',
+        'imdb',
+        'tvmaze',
+        'openlibrary',
+        'igdb',
+        'isbn13',
+        'isbn10',
+        'steam',
+        'wikidata',
+        'anilist',
+        'mal',
+      ].includes(e.kind)
+    )
       continue;
     const rows = db.all<{ id: string; title: string; type: MediaType; release_year: number | null }>(
       `SELECT i.id, i.title, i.type, i.release_year FROM external_ids x JOIN items i ON i.id = x.item_id

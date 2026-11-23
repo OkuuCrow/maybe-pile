@@ -133,7 +133,19 @@ export interface ProgressSummary {
 }
 
 export interface ExternalLinkView {
-  kind: 'imdb' | 'watch' | 'steam' | 'xbox' | 'playstation' | 'tmdb' | 'tvmaze' | 'openlibrary' | 'igdb';
+  kind:
+    | 'imdb'
+    | 'watch'
+    | 'steam'
+    | 'xbox'
+    | 'playstation'
+    | 'tmdb'
+    | 'tvmaze'
+    | 'openlibrary'
+    | 'igdb'
+    | 'wikidata'
+    | 'anilist'
+    | 'mal';
   label: string;
   url: string;
 }
@@ -144,6 +156,8 @@ export interface ItemDetail {
   meta: MetadataFields;
   personal: PersonalFields;
   pass: number;
+  /** Position in the Up Next queue (0 = first), or null when not queued. */
+  upNextPosition: number | null;
   createdAt: string;
   updatedAt: string;
   artwork: ArtworkView | null;
@@ -213,6 +227,17 @@ export interface DashboardData {
   /** Progress entries per ISO week (Monday start), last 12 weeks, oldest first. */
   activityByWeek: { weekStart: string; entries: number; completed: number }[];
   tagCounts: { tag: string; count: number }[];
+  /** The user's ordered "Up Next" queue. */
+  upNext: (ItemSummary & { nextAction: string | null })[];
+  yearStats: {
+    year: number;
+    completedByType: Record<MediaType, number>;
+    completedTotal: number;
+    added: number;
+    episodesWatched: number;
+    viewings: number;
+    progressEntries: number;
+  };
 }
 
 export interface TagCount {

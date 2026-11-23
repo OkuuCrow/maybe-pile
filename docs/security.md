@@ -1,6 +1,6 @@
 # Security model
 
-Maybe Pile is a local-first desktop app. It has no accounts, no server, and no telemetry. Security work focuses on keeping the Electron renderer contained, treating every external input as untrusted, and protecting the user's data and API keys.
+Maybe Pile is a local-first desktop app: the library lives on the user's computer and nothing is collected. Security work focuses on keeping the Electron renderer contained, treating every external input as untrusted, and protecting the user's data and API keys.
 
 ## Threat model
 
@@ -50,7 +50,7 @@ Maybe Pile is a local-first desktop app. It has no accounts, no server, and no t
 
 The app contacts only these hosts, and only on explicit user action (search, import, refresh, availability check, opening an artwork that is remote-only):
 
-`api.themoviedb.org`, `image.tmdb.org`, `api.tvmaze.com`, `static.tvmaze.com`, `openlibrary.org`, `covers.openlibrary.org` (which may redirect to `archive.org` image servers), `id.twitch.tv`, `api.igdb.com`, `images.igdb.com`.
+`api.themoviedb.org`, `image.tmdb.org`, `api.tvmaze.com`, `static.tvmaze.com`, `openlibrary.org`, `covers.openlibrary.org` (which may redirect to `archive.org` image servers), `id.twitch.tv`, `api.igdb.com`, `images.igdb.com`, `www.wikidata.org`, `graphql.anilist.co`, `s4.anilist.co`.
 
 There are no update checks, analytics or crash reporting.
 
@@ -83,6 +83,9 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `items:dashboard` | `items.dashboard` | Dashboard aggregates | — | `Result<…>` | none |
 | `items:tags` | `items.tags` | Tag counts | — | `Result<…>` | none |
 | `items:audit` | `items.audit` | Metadata audit log | { id } | `Result<…>` | none |
+| `items:setUpNext` | `items.setUpNext` | Add to / remove from the Up Next queue | { id, queued } | `Result<…>` | DB write |
+| `items:moveUpNext` | `items.moveUpNext` | Reorder the Up Next queue | { id, direction } | `Result<…>` | DB write |
+| `items:pickRandom` | `items.pickRandom` | Random Planned item ("Pick something for me") | { types, excludeId } | `Result<…>` | none |
 | `progress:add` | `progress.add` | Add progress entry | { itemId, entry, occurredAt, note } | `Result<…>` | DB write |
 | `progress:edit` | `progress.edit` | Edit history entry | { eventId, occurredAt, note, value, text } | `Result<…>` | DB write |
 | `progress:remove` | `progress.remove` | Delete history entry | { eventId } | `Result<…>` | DB write |

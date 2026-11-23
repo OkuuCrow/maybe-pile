@@ -12,8 +12,15 @@ These were researched in November 2026; terms change, so re-check them before sh
 | **TVmaze** | TV | none | 18 req / 10 s (documented ≥20/10 s) | Cached (CC BY-SA 4.0) | "TV data provided by TVmaze.com (CC BY-SA 4.0)." |
 | **Open Library** | Books | none | 1 req / 1.1 s (unidentified clients: 1/s) | Cached | "Book data and covers from Open Library (openlibrary.org)." |
 | **IGDB** | Games, store IDs | Twitch client ID + secret (client-credentials OAuth) | 4 req / s | **Remote-only** (caching terms unverified) | "Game data provided by IGDB.com." |
+| **Wikidata** | Movies, TV, games, books | none | 10 req / 2 s | No artwork (Wikidata images are rarely covers) | "Data from Wikidata, available under CC0 (public domain)." |
+| **AniList** | Anime (TV, movies), manga and light novels (books) | none | 25 req / min (documented 90/min, sometimes reduced to 30/min) | **Remote-only** | "Anime and manga data from AniList (anilist.co)." |
 
-Not used: **OMDb** (redundant with TMDB, with a stricter free tier), **RAWG** (its terms require a prominent link-back on every page that uses its data), **Google Books** (Open Library covers books without a key), **Steam Web API** (IGDB's `external_games` already supplies exact Steam app IDs). No provider is scraped, and only documented endpoints are used.
+**Every media type has at least one keyless source** (tested): movies → Wikidata, AniList; TV → TVmaze, Wikidata, AniList; games → Wikidata; books → Open Library, Wikidata, AniList. In the Add dialog the default source for a type is the first *ready* provider in this order: TMDB, TVmaze, Open Library, Wikidata, AniList, IGDB, so keyless sources are used automatically until you add keys.
+
+- **Wikidata** uses the documented MediaWiki Action API (`wbsearchentities`, `wbgetentities`). Search results are filtered to the requested type by *instance of* (P31) classes, with the item description as a fallback. Details map release date (earliest P577/P580, at the stated precision), directors/writers/cast, creators, developers/publishers, authors/illustrators/translators, genres, network, runtime (P2047), page count (P1104), ISBNs (P212/P957), and **exact identifiers**: IMDb (P345), TMDB (P4947 movie, P4983 TV), Steam app ID (P1733, which powers the Steam store link), AniList (P8729/P8731) and MyAnimeList (P4086/P4087). Wikidata has no season/episode lists; refresh a show from TVmaze for those.
+- **AniList** uses its public GraphQL API (`https://graphql.anilist.co`, read-only queries need no token). Anime TV formats map to TV shows (one season with numbered episodes when the count is known), anime movies to movies, and manga/light novels to books. Only main credits are kept (director, original creator, "Story & Art" author, illustrator). Adult entries are excluded. Free for non-commercial use.
+
+Not used: **Google Books** (evaluated in v1.1: without an API key the volumes endpoint returned HTTP 429 on every request from this environment, so it is not a usable keyless source), **OMDb** (redundant with TMDB, with a stricter free tier), **RAWG** (its terms require a prominent link-back on every page that uses its data), **Steam Web API** (IGDB's `external_games` already supplies exact Steam app IDs). No provider is scraped, and only documented endpoints are used.
 
 Non-commercial use: TMDB's free API is for non-commercial use. Distributing Maybe Pile commercially would need a TMDB agreement, or removing TMDB from the registry.
 
@@ -56,7 +63,7 @@ Provider strings are never trusted as HTML or URLs: summaries are converted to p
 
 ## Live verification
 
-`npm run smoke:providers` runs a real search and detail fetch against the **keyless** providers. It is not part of the test suite. See [verification-log.md](verification-log.md) for the actual output from this build. TMDB and IGDB were **not** exercised live (no keys available); they are covered by mock-based tests only.
+`npm run smoke:providers` runs a real search and detail fetch against the **keyless** providers (TVmaze, Open Library, Wikidata, AniList). It is not part of the test suite. See [verification-log.md](verification-log.md) for the actual output from this build. TMDB and IGDB were **not** exercised live (no keys available); they are covered by mock-based tests only.
 
 ## How to add a provider
 

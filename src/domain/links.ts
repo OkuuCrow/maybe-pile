@@ -24,6 +24,9 @@ export const LINK_HOSTS: Record<ExternalLinkView['kind'], readonly string[]> = {
   tvmaze: ['www.tvmaze.com'],
   openlibrary: ['openlibrary.org'],
   igdb: ['www.igdb.com'],
+  wikidata: ['www.wikidata.org'],
+  anilist: ['anilist.co'],
+  mal: ['myanimelist.net'],
 };
 
 /** Every host any link kind may point to (used by the generic external-link opener). */
@@ -40,6 +43,9 @@ export const INFO_HOSTS: readonly string[] = [
   'dev.twitch.tv',
   'developer.themoviedb.org',
   'creativecommons.org',
+  'anilist.co',
+  'docs.anilist.co',
+  'www.wikidata.org',
 ];
 
 export type UrlCheck = { ok: true; url: string } | { ok: false; reason: string };
@@ -103,7 +109,11 @@ export function externalIdError(id: ExternalId): string | null {
     case 'tmdb':
     case 'tvmaze':
     case 'igdb':
+    case 'anilist':
+    case 'mal':
       return /^\d{1,12}$/.test(id.value) ? null : 'This ID must be a number.';
+    case 'wikidata':
+      return /^Q\d{1,12}$/.test(id.value) ? null : 'Wikidata IDs look like Q42.';
     case 'openlibrary':
       return /^OL\d+[WMA]$/.test(id.value) ? null : 'Open Library IDs look like OL45804W.';
     case 'isbn10':
@@ -153,6 +163,20 @@ export function linksFromExternalIds(type: string, ids: readonly ExternalId[]): 
   const ol = get('openlibrary');
   if (ol && /^OL\d+W$/.test(ol) && type === 'book') {
     out.push({ kind: 'openlibrary', label: 'Open Library', url: `https://openlibrary.org/works/${ol}` });
+  }
+  // AniList / MyAnimeList cover anime (TV, movies) and manga (books).
+  const animeOrManga = type === 'book' ? 'manga' : 'anime';
+  const anilist = get('anilist');
+  if (anilist && /^\d+$/.test(anilist) && type !== 'game') {
+    out.push({ kind: 'anilist', label: 'AniList', url: `https://anilist.co/${animeOrManga}/${anilist}` });
+  }
+  const mal = get('mal');
+  if (mal && /^\d+$/.test(mal) && type !== 'game') {
+    out.push({ kind: 'mal', label: 'MyAnimeList', url: `https://myanimelist.net/${animeOrManga}/${mal}` });
+  }
+  const wikidata = get('wikidata');
+  if (wikidata && /^Q\d+$/.test(wikidata)) {
+    out.push({ kind: 'wikidata', label: 'Wikidata', url: `https://www.wikidata.org/wiki/${wikidata}` });
   }
   return out;
 }
