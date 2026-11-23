@@ -85,6 +85,10 @@ Press `?` at any time for keyboard shortcuts.
 | [packaging.md](docs/packaging.md) | Builds, installers, signing, CI |
 | [verification-log.md](docs/verification-log.md) | Exactly what was run for this build, and the results |
 
+## AI assistance disclaimer
+
+AI tools were used as an assistant during development of Maybe Pile, including for finding and fixing bugs. All changes were reviewed and are maintained by the project owner.
+
 ## License
 
 MIT; see [LICENSE](LICENSE). Third-party licenses are listed in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) (regenerate with `npm run licenses`). Metadata comes from TMDB, TVmaze, Open Library and IGDB under their own terms and attribution requirements (see [docs/providers.md](docs/providers.md)). This product uses the TMDB API but is not endorsed or certified by TMDB.
