@@ -103,18 +103,23 @@ function AppearanceTab() {
   const app = useApp();
   const toast = useToast();
   const themes = useAsync(() => call(getApi().themes.list()), []);
-  const active = app.settings?.activeThemeId ?? 'system';
+  // The chosen radio shows immediately; it reverts if saving fails.
+  const [pendingTheme, setPendingTheme] = useState<string | null>(null);
+  const active = pendingTheme ?? app.settings?.activeThemeId ?? 'system';
   const [editing, setEditing] = useState<ThemeDetailView | null>(null);
   const [confirm, setConfirm] = useState<'delete' | 'reset' | null>(null);
   const [resetCustom, setResetCustom] = useState(false);
   const id = useId();
 
   const choose = async (themeId: string) => {
+    setPendingTheme(themeId);
     try {
       await app.updateSettings({ activeThemeId: themeId });
       app.reloadTheme();
     } catch (e) {
       toast.error(errorOf(e));
+    } finally {
+      setPendingTheme(null);
     }
   };
   const act = async (fn: () => Promise<unknown>, ok: string) => {

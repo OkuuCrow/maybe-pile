@@ -53,3 +53,15 @@ Never commit certificates or passwords. Store them as CI secrets.
 ## Auto-update
 
 Not included (no hosted release server). To add it: configure `publish` in `electron-builder.yml`, add `electron-updater`, sign all builds, and make update checks opt-in so the app keeps its "no unexpected network calls" guarantee.
+
+## Releases
+
+`.github/workflows/release.yml` builds and publishes a GitHub Release:
+
+```bash
+# bump "version" in package.json first, commit, then:
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+It builds on GitHub's runners: Windows (`Maybe-Pile-Setup-<v>.exe`, `Maybe-Pile-Portable-<v>.exe`) and Linux (`Maybe-Pile-<v>-x86_64.AppImage`, `maybe-pile_<v>_amd64.deb`, `maybe-pile-<v>.x86_64.rpm`, `Maybe-Pile-<v>-x64.tar.gz`). It then creates the release with a `SHA256SUMS.txt`. You can also run it manually from the Actions tab with a tag name. macOS packages aren't included (they need a Mac signing identity to be usable).
