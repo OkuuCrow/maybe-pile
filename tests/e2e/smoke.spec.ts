@@ -143,6 +143,30 @@ test('Maybe Pile end-to-end smoke', async () => {
   await expect(page.getByText('5 items', { exact: true })).toBeVisible();
   await page.getByLabel('Sort by').selectOption('title');
 
+  // 5b. Feature pack in the real app: command palette, lists, Pick for Me, Stats, game-list review.
+  await page.keyboard.press('Control+K');
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  await palette.getByRole('combobox').fill('hades');
+  await palette.getByRole('combobox').press('Enter');
+  await expect(page.getByRole('heading', { level: 1, name: 'Hades' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add to list…' }).click();
+  const addToList = page.getByRole('dialog', { name: 'Add to list' });
+  await addToList.getByLabel('List', { exact: true }).selectOption('__new');
+  await addToList.getByLabel(/New list name/).fill('Roguelikes');
+  await addToList.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByRole('link', { name: /List: Roguelikes/ })).toBeVisible();
+  await page.goto('app://maybepile/index.html#/pick');
+  await page.getByRole('button', { name: 'Pick for me' }).click();
+  await expect(page.getByText(/^Why:/)).toBeVisible();
+  await page.goto('app://maybepile/index.html#/stats');
+  await expect(page.getByRole('heading', { name: 'Completed per month' })).toBeVisible();
+  await page.goto('app://maybepile/index.html#/import/sources');
+  await page.getByRole('button', { name: 'Paste or upload a game list' }).click();
+  const manualList = page.getByRole('dialog', { name: 'Paste or upload a game list' });
+  await manualList.getByLabel(/^Titles/).fill('Tunic\nOuter Wilds');
+  await manualList.getByRole('button', { name: 'Use pasted list' }).click();
+  await expect(page.getByRole('listbox', { name: /My game list games/ }).getByRole('option')).toHaveCount(2);
+
   // 6. Quit and relaunch: no data loss.
   await app.close();
   ({ app, page } = await launch());

@@ -42,3 +42,14 @@ If a migration fails, its transaction is rolled back and the library stays at th
 6. Report the problem with the diagnostic log (Settings → Data & Behavior → Export diagnostic log, or `logs/maybepile.log`). The log contains event names and error codes, not titles or notes.
 
 Alternatively, if you have a `.mpbackup`, install the previous version and restore it.
+
+## Migration history
+
+| Version | Name | Notes |
+| --- | --- | --- |
+| 1 | `core` | Base schema. |
+| 2 | `search_and_audit` | FTS5 index (back-filled) and metadata audit log. |
+| 3 | `up_next_and_ids` | `items.up_next_position`; `external_ids` rebuilt for Wikidata/AniList/MAL kinds. |
+| 4 | `feature_pack` (app 1.2) | Creates `up_next` and **copies the existing queue in order** (positions renumbered 0..n-1), then drops `items.up_next_position` and its index. Adds `item_snoozes`, `pick_history`, `lists`, `list_items`, `library_sources`, `library_source_entries`, `import_batches`, `import_batch_items`, `goals`, `csv_mapping_profiles`, `release_notifications`. New settings keys need no migration: missing keys fall back to defaults. |
+
+v4 is covered by `tests/integration/feature-pack.test.ts › migration v3 → v4`: realistic v3 rows → latest, queue order preserved, column dropped, every new table present, `foreign_key_check` and `integrity_check` clean, failure injection at v4 leaves v3 untouched, and opening an older library through `DatabaseManager` records the pre-migration snapshot.

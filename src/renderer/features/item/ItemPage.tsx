@@ -27,6 +27,8 @@ import { HistoryPanel } from './HistoryPanel';
 import { RefreshDialog } from './RefreshDialog';
 import { LinksPanel } from './LinksPanel';
 import { SeriesPanel } from './SeriesPanel';
+import { AddToListDialog } from '../lists/ListsPage';
+import { SnoozeDialog } from '../health/HealthPage';
 
 export function ItemPage({ id }: { id: string }) {
   const app = useApp();
@@ -43,6 +45,8 @@ export function ItemPage({ id }: { id: string }) {
     offerFill: boolean;
   } | null>(null);
   const [refreshOpen, setRefreshOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
   const readOnly = app.info?.readOnly ?? false;
 
@@ -60,6 +64,21 @@ export function ItemPage({ id }: { id: string }) {
 
   /** Applies a mutation outcome from main: new item state, plus any status suggestions to show. */
   const applyOutcome = (o: MutationOutcome) => {
+    const started = item.personal.status !== 'in_progress' && o.item.personal.status === 'in_progress';
+    if (started && o.item.upNextPosition !== null) {
+      // Starting an Up Next item offers (never forces) removing it from the shelf.
+      toast.show({
+        kind: 'info',
+        message: `“${o.item.meta.title}” is in progress. Keep it on Up Next?`,
+        action: {
+          label: 'Remove from Up Next',
+          run: () =>
+            void call(getApi().items.setUpNext({ id: o.item.id, queued: false }))
+              .then((d) => (q.setData(d), app.bumpData()))
+              .catch((e: unknown) => toast.error(errorOf(e))),
+        },
+      });
+    }
     q.setData(o.item);
     setSuggestions(o.suggestions);
     setHistoryTick((t) => t + 1);
@@ -280,6 +299,27 @@ export function ItemPage({ id }: { id: string }) {
             </div>
           </div>
           <ProgressBar percent={item.progress.percent} label={item.progress.label} />
+          {(item.lists.length > 0 || item.snoozedUntil || item.goneFromSources.length > 0) && (
+            <ul className="chip-list item-badges" aria-label="Collections and status notes">
+              {item.lists.map((l) => (
+                <li key={l.id}>
+                  <a className="chip chip-link" href={`#/list/${l.id}`}>
+                    <span aria-hidden="true">☰ </span>List: {l.name}
+                  </a>
+                </li>
+              ))}
+              {item.snoozedUntil && (
+                <li className="badge badge-snoozed">
+                  <span aria-hidden="true">⏾ </span>Snoozed until {fmtPartialDate(item.snoozedUntil)}
+                </li>
+              )}
+              {item.goneFromSources.map((label) => (
+                <li key={label} className="badge">
+                  <span aria-hidden="true">ⓘ </span>Not in {label} anymore
+                </li>
+              ))}
+            </ul>
+          )}
           {item.pass > 1 && <p className="muted">Pass {item.pass} (re-watch / re-read / replay)</p>}
           <dl className="dates">
             <div>
@@ -319,6 +359,26 @@ export function ItemPage({ id }: { id: string }) {
                     : `Up Next #${item.upNextPosition + 1} — remove`}
                 </button>
               )}
+              <button type="button" className="button" onClick={() => setListOpen(true)}>
+                Add to list…
+              </button>
+              {item.snoozedUntil ? (
+                <button
+                  type="button"
+                  className="button"
+                  onClick={() =>
+                    void call(getApi().health.unsnooze({ ids: [item.id] }))
+                      .then(() => (q.reload(), app.bumpData(), toast.success('Snooze removed.')))
+                      .catch((e: unknown) => toast.error(errorOf(e)))
+                  }
+                >
+                  Wake (snoozed until {fmtPartialDate(item.snoozedUntil)})
+                </button>
+              ) : (
+                <button type="button" className="button" onClick={() => setSnoozeOpen(true)}>
+                  Snooze…
+                </button>
+              )}
               {hasSource && (
                 <button type="button" className="button" onClick={() => setRefreshOpen(true)}>
                   <IconRefresh /> Refresh metadata…
@@ -331,6 +391,25 @@ export function ItemPage({ id }: { id: string }) {
           )}
         </div>
       </div>
+
+      {listOpen && (
+        <AddToListDialog itemIds={[item.id]} onClose={() => setListOpen(false)} onDone={q.reload} />
+      )}
+      {snoozeOpen && (
+        <SnoozeDialog
+          count={1}
+          title={item.meta.title}
+          onCancel={() => setSnoozeOpen(false)}
+          onSnooze={(until) => {
+            setSnoozeOpen(false);
+            void call(getApi().health.snooze({ ids: [item.id], until }))
+              .then(
+                () => (q.reload(), app.bumpData(), toast.success(`Snoozed until ${fmtPartialDate(until)}.`)),
+              )
+              .catch((e: unknown) => toast.error(errorOf(e)));
+          }}
+        />
+      )}
 
       {suggestions.length > 0 && (
         <div className="suggestions" role="status">

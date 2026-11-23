@@ -14,6 +14,11 @@ import { MemoryLogger } from '../src/main/services/logger';
 import { defaultPersonal, emptyMeta } from '../src/domain/metadata';
 import { DEFAULT_LIBRARY_QUERY } from '../src/shared/schemas';
 import { MEDIA_TYPES, STATUSES } from '../src/shared/enums';
+import { decodeText } from '../src/main/ipc/handlers';
+import { ArtworkService, passthroughProcessor } from '../src/main/services/artwork-service';
+import { createFeatureServices } from '../src/main/services/feature-services';
+import { ProviderService } from '../src/main/services/provider-service';
+import { SecretsService } from '../src/main/services/secrets-service';
 
 const dir = mkdtempSync(join(tmpdir(), 'mp-bench-'));
 const paths = pathsFor(dir);
@@ -103,5 +108,65 @@ if (tv) {
       prog.toggleEpisodes({ itemId: tv.id, episodeIds: ids, watched: true, scope: 'season' }),
     );
 }
+
+/* ---- feature pack (1.2): stats, pile health, pick, Steam review at 10k rows ---- */
+time('add 100,000 progress history rows', () => {
+  const ids = db.all<{ id: string }>('SELECT id FROM items LIMIT 10000').map((r) => r.id);
+  db.transaction(() => {
+    let seq = 1_000_000;
+    for (let k = 0; k < 10; k++)
+      for (const id of ids)
+        db.run(
+          `INSERT INTO progress_events (id, item_id, seq, kind, value, pass, occurred_at, recorded_at)
+           VALUES (lower(hex(randomblob(4))) || '-0000-4000-8000-' || lower(hex(randomblob(6))), ?, ?, 'percent', ?, 1, ?, ?)`,
+          [id, seq++, k * 10, `2025-0${1 + (k % 9)}-10T10:00:00.000Z`, '2025-01-01T00:00:00.000Z'],
+        );
+  });
+});
+const http = { request: async () => ({ status: 404, headers: {}, body: new Uint8Array() }) };
+const secrets = new SecretsService(
+  join(dir, 'secrets.json'),
+  { isEncryptionAvailable: () => false, encrypt: Buffer.from, decrypt: (b) => b.toString() },
+  ctx.log,
+  {},
+);
+const artwork = new ArtworkService(ctx, passthroughProcessor, http);
+const providers = new ProviderService(ctx, http, secrets, lib, artwork);
+const f = createFeatureServices(ctx, { library: lib, providers, secrets, http, decodeText });
+time('stats (all time)', () => f.stats.get(null));
+time('year in review', () => f.stats.yearInReview(2025));
+time('pile health overview', () => f.health.overview());
+time('library filter: stale (Pile Health)', () => q({ health: 'stale' }));
+const constraints = {
+  types: [],
+  genres: [],
+  tags: [],
+  listIds: [],
+  onlyUpNext: false,
+  includeInProgress: true,
+  includeOnHold: true,
+  availableMinutes: null,
+  ratingFloor: null,
+  excludeSkipped: true,
+};
+time('pick for me (all candidates)', () => f.pick.roll({ constraints, avoid: [], seed: 1 }));
+const src =
+  f.sources.loadManual({
+    sourceId: null,
+    label: 'Bench list',
+    text: Array.from({ length: 10_000 }, (_, i) => `Bench Game ${i}`).join('\n'),
+  })[0]?.id ?? '';
+const filter = {
+  sourceId: src,
+  view: 'unplayed' as const,
+  search: '',
+  showNonGames: false,
+  sort: 'name' as const,
+  direction: 'asc' as const,
+};
+time('library source review: 10,000 rows', () => f.sources.entries(filter));
+time('library source review: search within 10,000', () =>
+  f.sources.entries({ ...filter, search: 'game 99' }),
+);
 db.close();
 rmSync(dir, { recursive: true, force: true });

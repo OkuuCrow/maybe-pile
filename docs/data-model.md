@@ -1,6 +1,6 @@
 # Data model
 
-The schema is defined by `src/db/migrations/0001_core.ts`, `0002_search_and_audit.ts` and `0003_up_next_and_ids.ts`. Foreign keys are on (`PRAGMA foreign_keys = ON`), the journal is WAL, `synchronous = NORMAL`, and `busy_timeout` is 5 s. CHECK constraints mirror the enums in `src/shared/enums.ts` as a last line of defence; the services validate first.
+The schema is defined by `src/db/migrations/0001_core.ts`, `0002_search_and_audit.ts`, `0003_up_next_and_ids.ts` and `0004_feature_pack.ts`. Foreign keys are on (`PRAGMA foreign_keys = ON`), the journal is WAL, `synchronous = NORMAL`, and `busy_timeout` is 5 s. CHECK constraints mirror the enums in `src/shared/enums.ts` as a last line of defence; the services validate first.
 
 ## ER diagram
 
@@ -32,7 +32,11 @@ The schema is defined by `src/db/migrations/0001_core.ts`, `0002_search_and_audi
    audit_entries ──▶ audit_changes
    items_fts (FTS5, rowid = items.rid)
 
-   settings(key, value JSON) · themes(id, name, tokens JSON) · layout_components · schema_migrations
+   up_next (position UNIQUE) · item_snoozes · pick_history · list_items ──▶ lists
+   library_source_entries ──▶ library_sources ;  entries.item_id → items (SET NULL)
+   import_batch_items ──▶ import_batches (──▶ library_sources SET NULL)
+   goals (→ lists SET NULL) · release_notifications
+   settings(key, value JSON) · themes(id, name, tokens JSON) · layout_components · csv_mapping_profiles · schema_migrations
 ```
 
 All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (`tags`, `genres`, `creators`) are pruned of orphans after deletes and bulk edits.
@@ -41,7 +45,7 @@ All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (
 
 | Table | Purpose / notes |
 | --- | --- |
-| `items` | One row per media item. `up_next_position` (v3) is the 0-based Up Next queue position, or NULL when not queued. `rid` is an INTEGER PRIMARY KEY, which is stable across VACUUM and is the FTS rowid. `id` is a UUID used everywhere else. `sort_title` (articles dropped, numbers zero-padded) and `title_key` (folded) support sorting and duplicate detection. `rating` is 1–10 half-stars. `pass` counts re-watch/re-read runs. `progress_pct`/`progress_label` are a **cached derivation**, recomputed in the same transaction as every progress or metadata change, so lists can sort by progress. `deleted_at` holds soft-deleted items (undo); they are purged at next startup. |
+| `items` | One row per media item. (v3 added `up_next_position`; v4 moved the queue into the `up_next` table and dropped the column.) `rid` is an INTEGER PRIMARY KEY, which is stable across VACUUM and is the FTS rowid. `id` is a UUID used everywhere else. `sort_title` (articles dropped, numbers zero-padded) and `title_key` (folded) support sorting and duplicate detection. `rating` is 1–10 half-stars. `pass` counts re-watch/re-read runs. `progress_pct`/`progress_label` are a **cached derivation**, recomputed in the same transaction as every progress or metadata change, so lists can sort by progress. `deleted_at` holds soft-deleted items (undo); they are purged at next startup. |
 | `item_alt_titles` | Ordered alternate titles. |
 | `creators`, `item_creators` | Creator names (unique by folded name) and roles (director, writer, cast, creator, developer, publisher, author, translator, narrator, illustrator). |
 | `genres`, `item_genres` | Genre lookups. |
@@ -63,6 +67,16 @@ All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (
 | `layout_components` | `(surface, component_id) → position, visible, span`, fully normalized. |
 | `items_fts` | FTS5 index over title, alt titles, creators, tags and notes, with `unicode61 remove_diacritics 2`. |
 | `schema_migrations` | version, name, checksum, applied_at. |
+| `up_next` (v4) | `item_id` PK → items CASCADE, `position` **UNIQUE** ≥ 0, `added_at`. Positions are compacted to 0..n-1; swaps use a free temporary slot. |
+| `item_snoozes` (v4) | `item_id` PK → items CASCADE, `until` (local date, inclusive), `reason` (`manual` \| `pile-health` \| `keep`). |
+| `pick_history` (v4) | Pick for Me picks: `item_id`, `picked_at`, `outcome` (`shown` \| `started` \| `skipped` \| `queued`), `skip_until`. Trimmed to 200 rows. |
+| `lists`, `list_items` (v4) | Custom lists (`name_key` UNIQUE, optional `color`/`icon` enums, `position`) and ordered memberships; both CASCADE. Deleting a list deletes only memberships. |
+| `library_sources` (v4) | `kind` (`steam` \| `manual`), label, `account_input` (as typed), `account_ref` (resolved SteamID64), last sync time/status. **No key column**: keys live in `secrets.json`. |
+| `library_source_entries` (v4) | Per-source snapshot keyed by `(source_id, external_id)`: name, platform, `playtime_minutes`, `prev_playtime_minutes` (for re-sync diffs), `last_played_at`, `non_game_reason`, `first_seen_at`, `seen_at`, `removed_at` (no longer in the library, never deleted), `ignored`, `item_id` → items SET NULL. |
+| `import_batches`, `import_batch_items` (v4) | Undoable import records: kind (`steam`, `manual-list`, `goodreads`, `letterboxd`, `csv-mapped`), label, `undone_at`. Items keep a baseline `"<updated_at>\|<content fingerprint>"` and history count; undo removes only items whose fingerprint and history are unchanged. Purged after the retention period (default 30 days). |
+| `goals` (v4) | Target, metric (`items`/`pages`/`episodes`/`hours`), period (`year`/`month`/`custom`) with resolved `start_date`/`end_date` (CHECK end ≥ start), optional `media_type`, `list_id` (SET NULL), `tag`, `archived_at`. |
+| `csv_mapping_profiles` (v4) | Saved CSV column mappings (`name_key` UNIQUE, `mapping` JSON). |
+| `release_notifications` (v4) | `(item_id, release_date, kind)` → when the "today"/"tomorrow" notification was shown, so each fires once. |
 
 ## Deliberate JSON exceptions
 
@@ -70,6 +84,7 @@ All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (
 | --- | --- | --- |
 | `settings.value` | Small, heterogeneous preferences (e.g. the saved library query). Never queried by content. | Each key is validated by its Zod schema on read; invalid values fall back to defaults and are logged. `CHECK (json_valid(value))`. |
 | `themes.tokens` | An opaque token map applied as a whole; never queried by column. | Re-validated with `ThemeTokensSchema` on every read. A corrupt active theme falls back to Pile Light with a notice. `CHECK (json_valid(tokens))`. |
+| `csv_mapping_profiles.mapping` | A small mapping object applied as a whole; never queried by content. | Validated with `CsvMappingSchema` on read and on save; invalid rows are skipped. `CHECK (json_valid(mapping))`. |
 | `field_provenance.provider_value` | A snapshot of the provider's last value (scalar or list) used only for equality comparison during refresh. | Produced only by `canonicalValue()`; never parsed back into data. |
 
 ## Full-text search design

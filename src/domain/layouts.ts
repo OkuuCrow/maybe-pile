@@ -8,7 +8,14 @@ import { z } from 'zod';
 import { formatZodIssues, type ParseOutcome } from './themes';
 
 export const LAYOUT_FORMAT = 'maybepile-layout';
-export const LAYOUT_SCHEMA_VERSION = 1;
+/**
+ * Layout schema versions:
+ *   1 — app 1.0/1.1.
+ *   2 — app 1.2: adds dashboard components pileHealth, upcoming, goals, lists
+ *       and statsSummary. Version-1 files are migrated by appending those with
+ *       their default visibility (see migrateLayoutFile).
+ */
+export const LAYOUT_SCHEMA_VERSION = 2;
 export const LAYOUT_MAX_BYTES = 32 * 1024;
 
 export const DASHBOARD_COMPONENTS = [
@@ -22,7 +29,15 @@ export const DASHBOARD_COMPONENTS = [
   'activity',
   'yearStats',
   'tags',
+  'pileHealth',
+  'upcoming',
+  'goals',
+  'lists',
+  'statsSummary',
 ] as const;
+
+/** Components introduced by layout schema v2 (app 1.2). */
+export const V2_DASHBOARD_COMPONENTS = ['pileHealth', 'upcoming', 'goals', 'lists', 'statsSummary'] as const;
 export const LIBRARY_COMPONENTS = [
   'search',
   'filters',
@@ -39,7 +54,12 @@ export type LayoutSurface = 'dashboard' | 'library';
 export const COMPONENT_LABELS: Record<DashboardComponentId | LibraryComponentId, string> = {
   counts: 'Library counts',
   upNext: 'Up Next queue',
-  pick: 'Pick something for me',
+  pick: 'Pick for Me',
+  pileHealth: 'Pile Health',
+  upcoming: 'Upcoming releases',
+  goals: 'Goals',
+  lists: 'Lists',
+  statsSummary: 'Stats summary',
   yearStats: 'This year',
   continue: 'Continue (in progress)',
   recentlyUpdated: 'Recently updated',
@@ -71,7 +91,12 @@ export const DEFAULT_LAYOUTS: Record<LayoutSurface, LayoutEntry[]> = {
     { id: 'recentlyAdded', visible: true, span: 1 },
     { id: 'recentlyCompleted', visible: true, span: 1 },
     { id: 'activity', visible: true, span: 1 },
+    { id: 'goals', visible: true, span: 1 },
+    { id: 'upcoming', visible: true, span: 1 },
+    { id: 'pileHealth', visible: true, span: 2 },
     { id: 'yearStats', visible: true, span: 1 },
+    { id: 'statsSummary', visible: false, span: 1 },
+    { id: 'lists', visible: true, span: 1 },
     { id: 'tags', visible: true, span: 1 },
   ],
   library: LIBRARY_COMPONENTS.map((id) => ({ id, visible: true, span: 1 as const })),
@@ -89,7 +114,7 @@ const noDuplicateIds = <T extends { id: string }>(arr: T[]) =>
 
 export const LayoutFileSchema = z.strictObject({
   format: z.literal(LAYOUT_FORMAT),
-  schemaVersion: z.literal(LAYOUT_SCHEMA_VERSION),
+  schemaVersion: z.union([z.literal(1), z.literal(LAYOUT_SCHEMA_VERSION)]),
   dashboard: z
     .array(dashboardEntry)
     .max(DASHBOARD_COMPONENTS.length)
@@ -175,5 +200,25 @@ export function parseLayoutFile(textContent: string): ParseOutcome<LayoutFile> {
     }
   }
   const r = LayoutFileSchema.safeParse(json);
-  return r.success ? { ok: true, value: r.data } : { ok: false, issues: formatZodIssues(r.error) };
+  return r.success
+    ? { ok: true, value: migrateLayoutFile(r.data) }
+    : { ok: false, issues: formatZodIssues(r.error) };
+}
+
+/**
+ * Upgrades a validated layout file to the current schema version. v1 → v2
+ * appends the components added in 1.2 with their default visibility, so an
+ * old file doesn't trigger "missing component" notices.
+ */
+export function migrateLayoutFile(f: LayoutFile): LayoutFile {
+  if (f.schemaVersion === LAYOUT_SCHEMA_VERSION) return f;
+  const have = new Set(f.dashboard.map((e) => e.id));
+  const added = DEFAULT_LAYOUTS.dashboard
+    .filter(
+      (d) =>
+        (V2_DASHBOARD_COMPONENTS as readonly string[]).includes(d.id) &&
+        !have.has(d.id as DashboardComponentId),
+    )
+    .map((d) => ({ id: d.id as DashboardComponentId, visible: d.visible, span: d.span }));
+  return { ...f, schemaVersion: LAYOUT_SCHEMA_VERSION, dashboard: [...f.dashboard, ...added] };
 }

@@ -13,6 +13,7 @@ import type {
   Status,
 } from './enums';
 import type { MetadataField, MetadataFields, PersonalFields } from './schemas';
+import type { UserSafeError } from './result';
 
 export interface ArtworkView {
   id: string;
@@ -169,6 +170,12 @@ export interface ItemDetail {
   milestones: MilestoneView[];
   progress: ProgressSummary;
   links: ExternalLinkView[];
+  /** Custom lists containing this item (added in 1.2). */
+  lists: { id: string; name: string }[];
+  /** Pile Health snooze end date (inclusive), or null. */
+  snoozedUntil: string | null;
+  /** Library sources that imported this item and no longer list it (e.g. refunded on Steam). */
+  goneFromSources: string[];
 }
 
 export interface ItemSummary {
@@ -382,6 +389,15 @@ export interface CountsView {
   themes: number;
   layouts: number;
   artwork: number;
+  /* Added in 1.2 */
+  lists: number;
+  upNext: number;
+  snoozes: number;
+  goals: number;
+  librarySources: number;
+  sourceEntries: number;
+  importBatches: number;
+  mappingProfiles: number;
 }
 
 export interface ImportPreviewView {
@@ -399,6 +415,8 @@ export interface ImportPreviewView {
   summary: string;
   /** Word the user must type for destructive modes, or null. */
   confirmationWord: string | null;
+  /** Conflict resolutions offered (tracker imports never replace existing items). */
+  allowedResolutions?: ('skip' | 'duplicate' | 'update')[];
 }
 
 export interface ImportResultView {
@@ -407,6 +425,8 @@ export interface ImportResultView {
   skipped: number;
   duplicated: number;
   snapshotLabel: string | null;
+  /** Import batch id when the import can be undone (tracker imports). */
+  batchId?: string | null;
 }
 
 export interface FileOpResult {
@@ -433,4 +453,275 @@ export interface AppInfo {
   recoveryNotice: string | null;
   backupLocationLabel: string;
   readOnly: boolean;
+}
+
+/* ---------- feature pack (1.2) ---------- */
+
+export type ListColor = 'slate' | 'blue' | 'green' | 'amber' | 'red' | 'purple' | 'teal' | 'pink';
+export type ListIcon = 'list' | 'star' | 'heart' | 'ghost' | 'users' | 'plane' | 'flame' | 'leaf';
+
+export interface ListSummaryView {
+  id: string;
+  name: string;
+  description: string | null;
+  color: ListColor | null;
+  icon: ListIcon | null;
+  position: number;
+  total: number;
+  completed: number;
+  updatedAt: string;
+}
+
+export interface ListDetailView extends ListSummaryView {
+  items: (ItemSummary & { dateCompleted: string | null })[];
+}
+
+export interface PickResultView {
+  historyId: string | null;
+  pick: ItemSummary | null;
+  reasons: string[];
+  eligibleCount: number;
+  /** When the pool is empty: the constraint that removed the last items. */
+  emptiedBy: string | null;
+  emptiedByLabel: string | null;
+}
+
+export interface PickHistoryView {
+  id: string;
+  itemId: string;
+  title: string;
+  type: MediaType;
+  pickedAt: string;
+  outcome: 'shown' | 'started' | 'skipped' | 'queued';
+  skipUntil: string | null;
+}
+
+export interface HealthItemView extends ItemSummary {
+  reason: string;
+  kind: 'planned-old' | 'in-progress-idle';
+  days: number;
+}
+
+export interface SnoozedItemView extends ItemSummary {
+  snoozedUntil: string;
+  snoozeReason: 'manual' | 'pile-health' | 'keep';
+}
+
+export interface HealthOverview {
+  enabled: boolean;
+  thresholds: { plannedStaleMonths: number; inProgressStaleDays: number };
+  stale: HealthItemView[];
+  staleTotal: number;
+  snoozed: SnoozedItemView[];
+  stats: {
+    sizeByType: Record<MediaType, number>;
+    total: number;
+    plannedCount: number;
+    medianPlannedAgeDays: number | null;
+    windows: { days: 30 | 90; added: number; completed: number }[];
+    trend: { month: string; size: number }[];
+    smallSample: boolean;
+  };
+}
+
+export interface StatsView {
+  year: number | null;
+  years: number[];
+  completedTotal: number;
+  completedByMonth: { month: string; byType: Record<MediaType, number>; total: number }[];
+  completedByYear: { year: number; byType: Record<MediaType, number>; total: number }[];
+  avgRatingByType: { type: MediaType; average: number | null; rated: number; completed: number }[];
+  topGenres: { name: string; count: number }[];
+  topCreators: { name: string; count: number }[];
+  timeToComplete: { bucket: string; count: number }[];
+  timeToCompleteUnknown: number;
+  pages: { total: number; booksWithPages: number; booksWithoutPages: number };
+  episodesByMonth: { month: string; count: number }[];
+  gameHours: { total: number; gamesTracked: number };
+  streaks: { current: number; longest: number } | null;
+}
+
+export interface YearInReviewView {
+  year: number;
+  finished: number;
+  finishedByType: Record<MediaType, number>;
+  favorites: { id: string; title: string; type: MediaType; rating: number }[];
+  longestBook: { id: string; title: string; pages: number } | null;
+  longestGame: { id: string; title: string; hours: number } | null;
+  longestShow: { id: string; title: string; episodes: number } | null;
+  busiestMonth: { month: string; count: number } | null;
+  topTags: { name: string; count: number }[];
+  missing: { unrated: number; noStartDate: number; booksWithoutPages: number };
+}
+
+export interface UpcomingItemView extends ItemSummary {
+  releaseDate: string;
+  precision: 'year' | 'month' | 'day';
+  relative: string;
+  /** Where the date came from: a provider name, "you" or "unknown". */
+  dateSource: string;
+  /** When the provider data was last fetched (ISO), or null. */
+  fetchedAt: string | null;
+  userEdited: boolean;
+}
+
+export interface RadarDiffRow {
+  itemId: string;
+  title: string;
+  current: string | null;
+  incoming: string | null;
+  userEdited: boolean;
+  defaultChoice: 'keep' | 'update';
+}
+
+export interface RadarRefreshView {
+  token: string;
+  rows: RadarDiffRow[];
+  checked: number;
+  failures: { itemId: string; title: string; message: string }[];
+  skippedNoSource: number;
+}
+
+export interface LibrarySourceView {
+  id: string;
+  kind: 'steam' | 'manual';
+  label: string;
+  /** Account as typed (vanity/profile URL/SteamID), shown back to the user. */
+  accountInput: string | null;
+  /** Redacted SteamID64 (last 3 digits) when resolved. */
+  accountHint: string | null;
+  keySet: boolean;
+  lastSyncedAt: string | null;
+  lastSyncStatus: 'ok' | 'private' | 'error' | 'cancelled' | 'empty' | null;
+  counts: {
+    total: number;
+    unplayed: number;
+    inPile: number;
+    ignored: number;
+    removed: number;
+    newSinceSync: number;
+  };
+  attribution: string;
+  rateLimitText: string;
+}
+
+export interface SourceEntryView {
+  externalId: string;
+  name: string;
+  platform: string | null;
+  playtimeMinutes: number | null;
+  prevPlaytimeMinutes: number | null;
+  lastPlayedAt: string | null;
+  nonGameReason: string | null;
+  ignored: boolean;
+  removed: boolean;
+  isNew: boolean;
+  itemId: string | null;
+  /** Title-only duplicate warning (same normalized title already in the pile). */
+  possibleDuplicateOf: { id: string; title: string } | null;
+  storeUrl: string | null;
+}
+
+export interface SourceEntriesPage {
+  total: number;
+  /** All matching rows. The renderer virtualizes the list. */
+  rows: SourceEntryView[];
+}
+
+export interface FetchJobView {
+  jobId: string;
+  state: 'running' | 'done' | 'failed' | 'cancelled';
+  phase: string;
+  progress: number | null;
+  error: UserSafeError | null;
+  diff: { added: number; playtimeChanged: number; removed: number } | null;
+}
+
+export interface SourceDiffView {
+  added: { externalId: string; name: string }[];
+  playtimeChanged: {
+    externalId: string;
+    name: string;
+    before: number | null;
+    after: number | null;
+    itemId: string | null;
+    /** Hours currently recorded in the pile (for the "keep mine" comparison). */
+    pileHours: number | null;
+  }[];
+  removed: { externalId: string; name: string; itemId: string | null }[];
+}
+
+export interface ImportBatchView {
+  id: string;
+  kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped';
+  label: string;
+  createdAt: string;
+  undoneAt: string | null;
+  itemCount: number;
+  canUndo: boolean;
+}
+
+export interface BatchImportResultView {
+  batchId: string | null;
+  added: number;
+  skippedDuplicates: { externalId: string; title: string; existingId: string }[];
+  failed: { externalId: string; title: string; reason: string }[];
+  enrichment: { attempted: number; enriched: number; note: string | null } | null;
+}
+
+export interface UndoPreviewView {
+  batchId: string;
+  label: string;
+  removable: { itemId: string; title: string }[];
+  kept: { itemId: string; title: string; reason: string }[];
+  alreadyGone: number;
+}
+
+export interface GoalView {
+  id: string;
+  title: string;
+  mediaType: MediaType | null;
+  metric: 'items' | 'pages' | 'episodes' | 'hours';
+  period: 'year' | 'month' | 'custom';
+  startDate: string;
+  endDate: string;
+  target: number;
+  listId: string | null;
+  listName: string | null;
+  tag: string | null;
+  archived: boolean;
+  progress: number;
+  pace: {
+    status: 'done' | 'ahead' | 'on-pace' | 'behind' | 'not-started' | 'ended-short';
+    label: string;
+    expected: number;
+    math: string;
+    neededPerWeek: number | null;
+  };
+}
+
+export interface MappingProfileView {
+  id: string;
+  name: string;
+  mapping: unknown;
+  updatedAt: string;
+}
+
+export interface TrackerPreviewView extends ImportPreviewView {
+  tracker: 'goodreads' | 'letterboxd' | 'csv';
+  /** For the generic mapper: header and first rows for the live preview. */
+  header: string[];
+  sample: string[][];
+  delimiter: string;
+  /** Mapping in effect (generic mapper only). */
+  mapping: unknown;
+  /** Handle for re-mapping the same file (generic mapper only). */
+  mapToken: string | null;
+}
+
+export interface CommandTarget {
+  id: string;
+  title: string;
+  type: MediaType;
+  year: number | null;
 }

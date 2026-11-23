@@ -26,6 +26,19 @@ import { MAX_IMPORT_BYTES } from '../services/portable-format';
 import { getProvider } from '../../providers/registry';
 import { checkOpenExternal } from '../security/policy';
 import type { Handlers } from './register';
+import type { AppSettings } from '../../shared/schemas';
+import type { GoalsService } from '../services/goals-service';
+import type { ImportBatchService } from '../services/import-batch-service';
+import type { LibrarySourceService } from '../services/library-source-service';
+import type { ListsService } from '../services/lists-service';
+import type { PickService } from '../services/pick-service';
+import type { PileHealthService } from '../services/pile-health-service';
+import type { ReleaseRadarService } from '../services/release-radar-service';
+import type { StatsService } from '../services/stats-service';
+import type { TrackerImportService } from '../services/tracker-import-service';
+import { TRACKER_MAX_BYTES } from '../../domain/tracker-csv';
+import { defaultPersonal, emptyMeta } from '../../domain/metadata';
+import { localDate } from '../../domain/dates';
 import { timestampForFile } from '../services/db-manager';
 
 export interface FileFilter {
@@ -40,6 +53,8 @@ export interface Platform {
   folderDialog(opts: { title: string; defaultPath: string }): Promise<string | null>;
   openPath(dir: string): Promise<void>;
   openExternal(url: string): Promise<void>;
+  /** Captures a region of the app window as PNG (Stats "Save as image"), or null when unavailable. */
+  capturePng?(rect: { x: number; y: number; width: number; height: number }): Promise<Uint8Array | null>;
 }
 
 export interface HandlerDeps {
@@ -54,6 +69,17 @@ export interface HandlerDeps {
   backup: BackupService;
   secrets: SecretsService;
   platform: Platform;
+  lists: ListsService;
+  health: PileHealthService;
+  pick: PickService;
+  stats: StatsService;
+  radar: ReleaseRadarService;
+  sources: LibrarySourceService;
+  batches: ImportBatchService;
+  tracker: TrackerImportService;
+  goals: GoalsService;
+  /** Called after settings change (main re-registers the Quick Capture shortcut). */
+  onSettingsChanged?: (s: AppSettings) => void;
   appInfo: () => AppInfo;
   acknowledgeNotices: () => void;
   exportLogText: () => string;
@@ -157,7 +183,11 @@ export function buildHandlers(d: HandlerDeps): Handlers {
     },
 
     'settings:get': () => d.custom.getSettings(),
-    'settings:update': (p) => d.custom.patchSettings(p),
+    'settings:update': (p) => {
+      const next = d.custom.patchSettings(p);
+      d.onSettingsChanged?.(next);
+      return next;
+    },
 
     'items:query': (q) => d.library.query(q),
     'items:get': ({ id }) => d.library.get(id),
@@ -176,6 +206,151 @@ export function buildHandlers(d: HandlerDeps): Handlers {
     'items:setUpNext': ({ id, queued }) => d.library.setUpNext(id, queued),
     'items:moveUpNext': ({ id, direction }) => d.library.moveUpNext(id, direction),
     'items:pickRandom': ({ types, excludeId }) => d.library.pickRandom(types, excludeId),
+    'items:titles': () =>
+      d.ctx
+        .db()
+        .all<{
+          id: string;
+          title: string;
+          type: 'movie' | 'tv' | 'game' | 'book';
+          release_year: number | null;
+        }>(
+          'SELECT id, title, type, release_year FROM items WHERE deleted_at IS NULL ORDER BY sort_title LIMIT 100000',
+        )
+        .map((r) => ({ id: r.id, title: r.title, type: r.type, year: r.release_year })),
+    'items:quickCapture': ({ title, type, allowDuplicate }) => {
+      // Same validated path as the Add dialog; never touches the network.
+      const today = localDate(d.ctx.clock.now());
+      return d.library.create({
+        type,
+        meta: emptyMeta(title),
+        personal: defaultPersonal(type, today),
+        seasons: [],
+        milestones: [],
+        allowDuplicate,
+      });
+    },
+
+    'pick:roll': (req) => d.pick.roll(req),
+    'pick:respond': ({ historyId, outcome }) => d.pick.respond(historyId, outcome),
+    'pick:history': () => d.pick.history(),
+    'pick:clearSkips': () => ({ cleared: d.pick.clearSkips() }),
+
+    'health:overview': () => d.health.overview(),
+    'health:snooze': ({ ids, until }) => (d.health.snooze(ids, until), d.health.overview()),
+    'health:unsnooze': ({ ids }) => (d.health.unsnooze(ids), d.health.overview()),
+    'health:keep': ({ ids }) => (d.health.keep(ids), d.health.overview()),
+
+    'lists:list': () => d.lists.list(),
+    'lists:get': ({ id }) => d.lists.get(id),
+    'lists:save': (input) => d.lists.save(input),
+    'lists:delete': ({ id }) => d.lists.remove(id),
+    'lists:move': ({ id, direction }) => d.lists.move(id, direction),
+    'lists:setMembership': ({ listId, itemIds, member }) => ({
+      changed: d.lists.setMembership(listId, itemIds, member),
+      lists: d.lists.list(),
+    }),
+    'lists:moveItem': ({ listId, itemId, direction }) => d.lists.moveItem(listId, itemId, direction),
+
+    'stats:get': ({ year }) => d.stats.get(year),
+    'stats:yearInReview': ({ year }) => d.stats.yearInReview(year),
+    'stats:exportCsv': ({ chart, year }) =>
+      saveVia(
+        'Export chart data (CSV)',
+        `maybe-pile-${chart}${year ? `-${year}` : ''}.csv`,
+        [CSV_FILTER],
+        () => d.stats.chartCsv(chart, year, d.custom.getSettings().csvBom),
+      ),
+    'stats:saveImage': async ({ name, rect }) => {
+      if (!d.platform.capturePng) throw appError('INTERNAL', 'Saving images is not available here.');
+      const png = await d.platform.capturePng(rect);
+      if (!png || png.byteLength === 0)
+        throw appError('IO', 'The chart could not be captured.', {
+          recovery: 'Scroll the chart fully into view and try again.',
+        });
+      return saveVia(
+        'Save chart as image',
+        `maybe-pile-${name}.png`,
+        [{ name: 'PNG image', extensions: ['png'] }],
+        () => png,
+      );
+    },
+
+    'radar:upcoming': () => d.radar.upcoming(),
+    'radar:refreshPreview': () => d.radar.refreshPreview(),
+    'radar:refreshApply': ({ token, choices }) => d.radar.refreshApply(token, choices),
+    'radar:exportIcs': async () => {
+      const ics = d.radar.ics();
+      const r = await saveVia(
+        'Export upcoming releases (.ics)',
+        `maybe-pile-releases-${stamp().slice(0, 10)}.ics`,
+        [{ name: 'iCalendar', extensions: ['ics'] }],
+        () => ics.text,
+      );
+      return r ? { ...r, included: ics.included, skipped: ics.skipped } : null;
+    },
+
+    'sources:list': () => d.sources.list(),
+    'sources:saveSteam': (input) => d.sources.saveSteam(input),
+    'sources:clearSteamKey': () => d.sources.clearSteamKey(),
+    'sources:delete': ({ sourceId }) => d.sources.remove(sourceId),
+    'sources:testSteam': ({ sourceId }) => d.sources.testSteam(sourceId),
+    'sources:startFetch': ({ sourceId }) => d.sources.startFetch(sourceId),
+    'sources:fetchStatus': ({ jobId }) => d.sources.fetchStatus(jobId),
+    'sources:cancelFetch': ({ jobId }) => d.sources.cancelFetch(jobId),
+    'sources:entries': (f) => d.sources.entries(f),
+    'sources:setIgnored': ({ sourceId, externalIds, ignored }) => ({
+      changed: d.sources.setIgnored(sourceId, externalIds, ignored),
+    }),
+    'sources:import': (input) => d.sources.importSelected(input),
+    'sources:diff': ({ sourceId }) => d.sources.diff(sourceId),
+    'sources:applyPlaytime': ({ sourceId, externalIds }) => ({
+      updated: d.sources.applyPlaytime(sourceId, externalIds),
+    }),
+    'sources:loadManual': (input) => d.sources.loadManual(input),
+    'sources:loadManualFile': async ({ sourceId, label }) => {
+      const path = await d.platform.openDialog({
+        title: 'Choose a game list',
+        filters: [{ name: 'Text or CSV', extensions: ['txt', 'csv', 'tsv'] }],
+      });
+      if (!path) return null;
+      return d.sources.loadManual({ sourceId, label, text: decodeText(readLimited(path, 5 * 1024 * 1024)) });
+    },
+
+    'batches:list': () => d.batches.list(),
+    'batches:undoPreview': ({ batchId }) => d.batches.undoPreview(batchId),
+    'batches:undo': ({ batchId }) => d.batches.undo(batchId),
+
+    'tracker:preview': async ({ kind, profileId }) => {
+      const filters =
+        kind === 'letterboxd'
+          ? [{ name: 'Letterboxd export (.zip or .csv)', extensions: ['zip', 'csv'] }]
+          : kind === 'goodreads'
+            ? [CSV_FILTER]
+            : [{ name: 'CSV / TSV', extensions: ['csv', 'tsv', 'txt'] }];
+      const title =
+        kind === 'goodreads'
+          ? 'Import Goodreads library'
+          : kind === 'letterboxd'
+            ? 'Import Letterboxd export'
+            : 'Import a CSV file';
+      const path = await d.platform.openDialog({ title, filters });
+      if (!path) return null;
+      const bytes = readLimited(path, TRACKER_MAX_BYTES);
+      const profile = profileId ? d.tracker.profiles().find((p) => p.id === profileId) : undefined;
+      return d.tracker.preview(kind, [{ name: basename(path), bytes }], profile?.mapping as never);
+    },
+    'tracker:remap': ({ mapToken, previousToken, mapping }) =>
+      d.tracker.remap(mapToken, previousToken, mapping),
+    'tracker:apply': (input) => d.importer.apply(input),
+    'tracker:profiles': () => d.tracker.profiles(),
+    'tracker:saveProfile': ({ name, mapping }) => d.tracker.saveProfile(name, mapping),
+    'tracker:deleteProfile': ({ id }) => d.tracker.deleteProfile(id),
+
+    'goals:list': ({ includeArchived }) => d.goals.list(includeArchived),
+    'goals:save': (input) => d.goals.save(input),
+    'goals:archive': ({ id, archived }) => d.goals.setArchived(id, archived),
+    'goals:delete': ({ id }) => d.goals.remove(id),
 
     'progress:add': (p) => d.progress.add(p),
     'progress:edit': (p) => d.progress.edit(p),

@@ -17,6 +17,12 @@ The target is WCAG 2.2 AA.
 | `X` or Space | Item checkbox | Select/deselect the focused library item |
 | Enter | Click | Open the focused item |
 | `?` | Help → Keyboard Shortcuts | Show the shortcut list |
+| Ctrl/⌘ + K | **Search & commands** button | Command palette (items, views, actions) |
+| Ctrl/⌘ + Shift + N | Command palette → Quick Capture | Quick Capture (optional global shortcut in Settings → Features) |
+| Ctrl/⌘ + Shift + P | Command palette → Pick for Me | Pick for Me |
+| ↑ ↓ Home End PgUp PgDn | — | Import review list: move focus |
+| Space / Shift + ↑↓ / Ctrl/⌘ + A | Click / Shift+click / "Select all shown" | Import review list: toggle / extend / select all shown |
+| `I` / `O` | "Ignore" / "Open on Steam" buttons | Import review list: ignore / open the focused game |
 
 Single-key shortcuts are ignored while focus is in a text field, select or text area, and while a modal is open. Modifier shortcuts are native menu accelerators, so they never compete with text editing. The shortcut list is available from the Help menu, the `?` key, and Settings → About.
 
@@ -30,7 +36,11 @@ Single-key shortcuts are ignored while focus is in a text field, select or text 
 - Forms: every control has a `<label>`. Hints and errors are linked through `aria-describedby`, and invalid fields set `aria-invalid`. On submit, an error summary (`role="alert"`) receives focus once and links to each invalid field. Unsaved input is kept on errors.
 - Status is never colour-only: badges combine an icon, a text label and colour. Progress bars have `role="progressbar"` with `aria-valuetext` such as "12 of 30 episodes". Errors use an icon plus text.
 - Live regions: toasts use `role="status"` (polite) for success/info and `role="alert"` for errors. The library result count and async search results are announced.
-- Charts: the activity chart is decorative (`aria-hidden`), and the same data is available as a table ("Show as table").
+- Charts: the dashboard activity chart is decorative (`aria-hidden`), and the same data is available as a table ("Show as table"). Stats and Pile Health charts are `role="img"` with a title and text summary. Bars carry their numbers as text and use fill **patterns** as well as colour, and each chart has a **Show data table** toggle (`aria-expanded`).
+- Command palette: ARIA combobox + listbox with `aria-activedescendant`. The result count is announced, Esc closes, and focus returns to where it was.
+- Import review list: a virtualized `listbox` with `aria-multiselectable`, `aria-activedescendant`, and `aria-setsize`/`aria-posinset` on each option. Rows contain no nested controls; per-row actions are in a toolbar that acts on the focused row (and on `I`/`O`).
+- Pick for Me results, Steam sync progress, import results and Year in Review are polite live regions.
+- Goal pace and Pile Health reasons are plain text ("Behind pace", "No progress for 3 months"), never colour alone. State badges (Snoozed, Ignored, In pile, New, Possible duplicate) pair an icon with text.
 - Motion: `prefers-reduced-motion` disables animations. The only animation is a loading spinner.
 - Text scaling: sizes are rem-based, so OS/browser zoom (Ctrl +/−) and the theme's text-size setting reflow the layout. The window minimum is 760×520; below 900px wide the layouts become single-column with no horizontal page scroll.
 - Images have alt text ("Cover of …"). Missing or unavailable covers render a labelled placeholder.
@@ -39,13 +49,13 @@ Single-key shortcuts are ignored while focus is in a text field, select or text 
 
 ## How it is tested
 
-- **Automated (`npm run test:a11y`):** axe-core 4.14 runs WCAG 2.0/2.1/2.2 A and AA rules plus best practices on the empty and populated dashboard, library, item detail, add dialog (search and manual form with errors), status-change dialog, and all seven Settings tabs. Colour contrast is excluded from axe (jsdom can't compute styles) and is verified by `tests/unit/domain.test.ts › built-in themes meet WCAG AA`.
+- **Automated (`npm run test:a11y`):** axe-core 4.14 runs WCAG 2.0/2.1/2.2 A and AA rules plus best practices on the empty and populated dashboard, library, item detail, add dialog (search and manual form with errors), status-change dialog, and all eight Settings tabs. In 1.2 it also covers (`tests/ui/features.test.tsx`): the **Steam review screen** and its import/confirm/result dialogs, the Steam setup form with field errors, **Pick for Me** (result and empty pool), the dashboard with **Up Next / Pick / Pile Health / Goals / Upcoming / Lists**, the **Pile Health** page and snooze dialog, **Lists** (index, editor, detail), **Stats** (charts and Year in Review), the **Command Palette**, **Goals** (editor with errors), and **Quick Capture**. Keyboard multi-select (Space, Shift+↓, Ctrl+A, `I`) and palette focus return are tested too. Colour contrast is excluded from axe (jsdom can't compute styles) and is verified by `tests/unit/domain.test.ts › built-in themes meet WCAG AA`.
 - **Automated keyboard and focus tests** (`tests/ui/app.test.tsx`): focus trap and restore in dialogs, Esc to close, Enter on a destructive confirmation activates Cancel, `X` toggles selection in the library, `?` doesn't trigger while typing, and error-summary focus.
 - **End-to-end** (`tests/e2e/smoke.spec.ts`): drives the real app through role-based locators (labels, roles, accessible names). Each step that passes also confirms the elements are reachable by accessible name.
 
 ## Manual verification status
 
-A full manual keyboard-only and screen-reader pass by a person was **not** performed in this build environment. The automated tests above cover keyboard operation of the main flows. Before release, do a manual pass with NVDA (Windows), VoiceOver (macOS) and Orca (Linux) covering add → track → complete, library filtering, refresh, theme editing and restore.
+A full manual keyboard-only and screen-reader pass by a person was **not** performed in this build environment, for 1.0 or for the 1.2 feature pack. Before release, include in the manual pass: the Steam review list (NVDA/VoiceOver announce option name, selection state and position), the command palette, Stats data tables, and the Pile Health triage buttons. The automated tests above cover keyboard operation of the main flows. Before release, do a manual pass with NVDA (Windows), VoiceOver (macOS) and Orca (Linux) covering add → track → complete, library filtering, refresh, theme editing and restore.
 
 ## Known gaps
 

@@ -88,6 +88,9 @@ describe('add dialog', () => {
         direction: 'asc',
         offset: 0,
         limit: 10,
+        listId: null,
+        upNextOnly: false,
+        health: null,
       }).total,
     ).toBe(1);
   });
@@ -235,14 +238,14 @@ describe('Up Next, pick and year stats', () => {
     );
     await waitFor(() => expect(document.activeElement?.getAttribute('aria-label')).toBe('Move Arrival down')); // focus kept on the moved item
     await user.click(screen.getByRole('button', { name: 'Pick for me' }));
-    expect(await screen.findByRole('button', { name: 'Pick again' })).toBeTruthy();
+    expect(await screen.findAllByRole('button', { name: 'Re-roll' })).toBeTruthy();
     expect(screen.getByRole('heading', { name: /This year/ })).toBeTruthy();
     await expectNoAxeViolations();
   });
 });
 
 describe('settings', () => {
-  it.each(['appearance', 'layout', 'providers', 'library', 'backup', 'data', 'about'])(
+  it.each(['appearance', 'layout', 'providers', 'library', 'features', 'backup', 'data', 'about'])(
     'a11y: %s tab has no violations',
     async (tab) => {
       seed(env);

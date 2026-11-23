@@ -29,8 +29,11 @@ import {
   compareForRefresh,
   defaultPersonal,
   displayValue,
+  isEmptyValue,
   mergeRefresh,
 } from '../../domain/metadata';
+import { titleKey } from '../../domain/normalize';
+import type { MediaType } from '../../shared/enums';
 import { planStatusChange } from '../../domain/status-rules';
 import { readSettings } from '../../db/repositories/config-repo';
 import { addAudit } from '../../db/repositories/catalog-repo';
@@ -423,6 +426,74 @@ export class ProviderService {
     this.refreshes.delete(input.token);
     this.ctx.log.info('provider.refreshApplied', { providerId: p.id, itemId: row.id });
     return this.library.get(row.id);
+  }
+
+  /* ---------------------------------------------------------------- enrichment (library sources) */
+
+  /** First enabled, configured provider for a media type (keyed providers first). */
+  enrichmentProvider(type: MediaType): MetadataProvider | null {
+    const candidates = PROVIDERS.filter((p) => p.supports.includes(type) && this.enabled(p));
+    const configured = candidates.filter((p) => p.isConfigured(this.secrets.keysFor(p.id)));
+    return configured.find((p) => p.requiresApiKey) ?? configured[0] ?? null;
+  }
+
+  /**
+   * Looks the item up by exact (normalized) title and fills only fields that are
+   * currently empty. Never overwrites anything; returns false when no
+   * unambiguous match exists. Network failures are reported as false + reason.
+   */
+  async enrichEmptyFields(
+    itemId: string,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; reason: string | null }> {
+    const db = this.ctx.db();
+    const row = items.getItemRow(db, itemId);
+    if (!row) return { ok: false, reason: 'Item no longer exists.' };
+    const p = this.enrichmentProvider(row.type);
+    if (!p) return { ok: false, reason: 'No metadata provider is configured for this type.' };
+    const hits = await p.search({ type: row.type, query: row.title, year: null }, this.context(p, signal));
+    if (hits.kind !== 'ok') return { ok: false, reason: toUserSafeError(hits, p.displayName).message };
+    const key = titleKey(row.title);
+    const exact = hits.value.filter((h) => titleKey(h.title) === key);
+    if (exact.length !== 1 || !exact[0])
+      return { ok: false, reason: exact.length > 1 ? 'Several matches; skipped.' : 'No exact match.' };
+    const details = await p.fetchDetails(exact[0].ref, this.context(p, signal));
+    if (details.kind !== 'ok') return { ok: false, reason: toUserSafeError(details, p.displayName).message };
+    const incoming = details.value;
+    const now = this.ctx.clock.now().toISOString();
+    db.transaction(() => {
+      const current = items.loadMeta(db, row);
+      const cmp = compareForRefresh(row.type, current, incoming.meta, items.loadProvenance(db, row.id));
+      const choices: Record<string, 'keep' | 'update'> = {};
+      for (const r of cmp.rows) {
+        const f = r.field as MetadataField;
+        choices[r.field] = isEmptyValue(current[f]) ? 'update' : 'keep';
+      }
+      // External ids are merged, never replaced.
+      const merged = mergeRefresh(current, incoming.meta, cmp.rows, choices);
+      const ids = [...current.externalIds];
+      for (const e of incoming.meta.externalIds) if (!ids.some((x) => x.kind === e.kind)) ids.push(e);
+      merged.meta.externalIds = ids;
+      items.writeMeta(db, row.id, row.type, merged.meta);
+      for (const f of merged.updated)
+        items.setProvenance(db, row.id, f, 'provider', p.id, canonicalValue(f, incoming.meta[f]), now);
+      items.setSource(db, row.id, p.id, incoming.ref.id, incoming.sourceUrl, now);
+      addAudit(
+        db,
+        row.id,
+        'refresh',
+        p.id,
+        merged.updated.map((f) => ({
+          field: f,
+          oldValue: null,
+          newValue: displayValue(f, incoming.meta[f]),
+        })),
+        now,
+      );
+      items.touch(db, row.id, now);
+      items.reindexItem(db, row.id);
+    });
+    return { ok: true, reason: null };
   }
 
   /* ---------------------------------------------------------------- watch links */

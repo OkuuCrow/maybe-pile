@@ -2,7 +2,7 @@
  * Preview for JSON/CSV import (merge) and full-backup restore (replace).
  * Nothing changes until the user confirms; cancelling discards the staged data.
  */
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { MEDIA_TYPES } from '../../../shared/enums';
 import type { CountsView, ImportPreviewView, ImportResultView } from '../../../shared/types';
 import { call, errorOf, getApi } from '../../app/api';
@@ -12,6 +12,7 @@ import { ErrorBox } from '../../components/Bits';
 import type { UserSafeError } from '../../../shared/result';
 
 type Resolution = 'skip' | 'duplicate' | 'update';
+export type { Resolution };
 const RES_LABELS: Record<Resolution, string> = {
   skip: 'Skip (keep mine)',
   duplicate: 'Keep both',
@@ -39,6 +40,14 @@ function CountsTable({
     ['Tags', current.tags, incoming.tags],
     ['Custom themes', current.themes, incoming.themes],
     ['Artwork files', current.artwork, incoming.artwork],
+    ['Lists', current.lists, incoming.lists],
+    ['Up Next entries', current.upNext, incoming.upNext],
+    ['Snoozed items', current.snoozes, incoming.snoozes],
+    ['Goals', current.goals, incoming.goals],
+    ['Library sources', current.librarySources, incoming.librarySources],
+    ['Library source entries', current.sourceEntries, incoming.sourceEntries],
+    ['Import batches (undo history)', current.importBatches, incoming.importBatches],
+    ['CSV mapping profiles', current.mappingProfiles, incoming.mappingProfiles],
   ];
   return (
     <table className="table">
@@ -71,12 +80,26 @@ export function ImportPreviewDialog({
   preview,
   onClose,
   onApplied,
+  apply: applyOverride,
+  children,
+  title,
 }: {
   preview: ImportPreviewView;
   onClose: () => void;
   onApplied: (r: ImportResultView) => void;
+  /** Custom apply (tracker imports). Defaults to data:importApply. */
+  apply?: (input: {
+    token: string;
+    defaultResolution: Resolution;
+    resolutions: Record<string, Resolution>;
+    confirmation: string;
+  }) => Promise<ImportResultView>;
+  /** Extra content above the counts (e.g. the CSV column mapper). */
+  children?: ReactNode;
+  title?: string;
 }) {
   const id = useId();
+  const allowed: Resolution[] = preview.allowedResolutions ?? ['skip', 'duplicate', 'update'];
   const [def, setDef] = useState<Resolution>('skip');
   const [per, setPer] = useState<Record<string, Resolution>>({});
   const [typed, setTyped] = useState('');
@@ -98,15 +121,10 @@ export function ImportPreviewDialog({
     setBusy(true);
     setError(null);
     try {
-      const r = await call(
-        getApi().data.importApply({
-          kind: preview.kind,
-          token: preview.token,
-          defaultResolution: def,
-          resolutions: per,
-          confirmation: typed,
-        }),
-      );
+      const input = { token: preview.token, defaultResolution: def, resolutions: per, confirmation: typed };
+      const r = applyOverride
+        ? await applyOverride(input)
+        : await call(getApi().data.importApply({ kind: preview.kind, ...input }));
       onApplied(r);
     } catch (e) {
       setError(errorOf(e));
@@ -118,9 +136,10 @@ export function ImportPreviewDialog({
   return (
     <Dialog
       title={
-        preview.mode === 'replace'
+        title ??
+        (preview.mode === 'replace'
           ? 'Restore backup — review before replacing'
-          : 'Import — review before merging'
+          : 'Import — review before merging')
       }
       onClose={cancel}
       size="large"
@@ -146,6 +165,7 @@ export function ImportPreviewDialog({
       <p>
         <strong>File:</strong> {preview.fileLabel} · <strong>Format:</strong> {preview.formatVersion}
       </p>
+      {children}
       <p className={preview.mode === 'replace' ? 'notice notice-warning' : undefined}>{preview.summary}</p>
       {errors.length > 0 && (
         <div className="notice notice-error" role="alert">
@@ -163,8 +183,12 @@ export function ImportPreviewDialog({
       )}
       {warnings.length > 0 && (
         <ul className="warnings">
-          {warnings.map((m, i) => (
-            <li key={i}>⚠ {m.message}</li>
+          {warnings.slice(0, 200).map((m, i) => (
+            <li key={i}>
+              ⚠ {m.path.startsWith('row') ? <code>{m.path}</code> : null}
+              {m.path.startsWith('row') ? ': ' : ''}
+              {m.message}
+            </li>
           ))}
         </ul>
       )}
@@ -180,7 +204,7 @@ export function ImportPreviewDialog({
               value={def}
               onChange={(e) => setDef(e.target.value as Resolution)}
             >
-              {(Object.keys(RES_LABELS) as Resolution[]).map((r) => (
+              {allowed.map((r) => (
                 <option key={r} value={r}>
                   {RES_LABELS[r]}
                 </option>
@@ -222,7 +246,7 @@ export function ImportPreviewDialog({
                       value={per[c.id] ?? def}
                       onChange={(e) => setPer((p) => ({ ...p, [c.id]: e.target.value as Resolution }))}
                     >
-                      {(Object.keys(RES_LABELS) as Resolution[]).map((r) => (
+                      {allowed.map((r) => (
                         <option key={r} value={r}>
                           {RES_LABELS[r]}
                         </option>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getApi, call } from './api';
 import { AppProvider, useApp } from './context';
 import { S } from './strings';
@@ -6,12 +6,24 @@ import { ToastProvider, useToast } from './toast';
 import { SHORTCUTS, isTypingTarget } from './shortcuts';
 import { Dialog } from '../components/Dialog';
 import { Notice } from '../components/Bits';
-import { IconGear, IconHome, IconPlus, IconStack } from '../components/Icons';
+import { IconGear, IconGrid, IconHome, IconList, IconPlus, IconSearch, IconStack } from '../components/Icons';
 import { Dashboard } from '../features/dashboard/Dashboard';
 import { Library } from '../features/library/Library';
 import { ItemPage } from '../features/item/ItemPage';
 import { AddDialog } from '../features/add/AddDialog';
 import { Settings } from '../features/settings/Settings';
+import { PickPage } from '../features/pick/PickPage';
+import { HealthPage } from '../features/health/HealthPage';
+import { ListDetailPage, ListsPage } from '../features/lists/ListsPage';
+import { StatsPage } from '../features/stats/StatsPage';
+import { GoalsPage } from '../features/goals/GoalsPage';
+import { UpcomingPage } from '../features/radar/UpcomingPage';
+import { ImportPage } from '../features/import/ImportPage';
+import { CommandPalette, buildCommands } from '../features/palette/CommandPalette';
+import { QuickCapture } from '../features/palette/QuickCapture';
+import { COMPONENT_LABELS, DEFAULT_LAYOUTS, type DashboardComponentId } from '../../domain/layouts';
+import { errorOf } from './api';
+import type { ThemeSummary } from '../../shared/types';
 import type { MenuCommand } from '../../shared/ipc-channels';
 
 export function App() {
@@ -70,6 +82,15 @@ function Shell() {
       case 'about':
         app.navigate({ name: 'settings', tab: 'about' });
         break;
+      case 'command-palette':
+        app.setPaletteOpen(true);
+        break;
+      case 'quick-capture':
+        app.setCaptureOpen(true);
+        break;
+      case 'pick-for-me':
+        app.navigate({ name: 'pick' });
+        break;
     }
   };
   const runRef = useRef(runCommand);
@@ -79,7 +100,24 @@ function Shell() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.defaultPrevented) return;
+      // Modifier shortcuts also come from the native menu; handling them here keeps them working
+      // when the menu is hidden and in tests. Opening twice is harmless.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'k' && !e.shiftKey) {
+          e.preventDefault();
+          runRef.current('command-palette');
+        } else if (key === 'n' && e.shiftKey) {
+          e.preventDefault();
+          runRef.current('quick-capture');
+        } else if (key === 'p' && e.shiftKey) {
+          e.preventDefault();
+          runRef.current('pick-for-me');
+        }
+        return;
+      }
+      if (e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       const k = e.key;
@@ -135,12 +173,25 @@ function Shell() {
     ...(app.layouts?.notices ?? []).map((n, i) => ({ k: `lay${i}`, kind: 'info' as const, text: n })),
   ].filter((n): n is NonNullable<typeof n> => n !== null);
 
-  const navItem = (name: 'dashboard' | 'library' | 'settings', label: string, icon: ReactNode) => {
-    const current = app.route.name === name || (name === 'library' && app.route.name === 'item');
+  const navItem = (
+    name: 'dashboard' | 'library' | 'settings' | 'lists' | 'stats' | 'import',
+    label: string,
+    icon: ReactNode,
+  ) => {
+    const current =
+      app.route.name === name ||
+      (name === 'library' && app.route.name === 'item') ||
+      (name === 'lists' && app.route.name === 'list');
     return (
       <li>
         <a
-          href={name === 'settings' ? '#/settings/appearance' : `#/${name}`}
+          href={
+            name === 'settings'
+              ? '#/settings/appearance'
+              : name === 'import'
+                ? '#/import/sources'
+                : `#/${name}`
+          }
           className={`nav-link ${current ? 'nav-current' : ''}`}
           aria-current={app.route.name === name ? 'page' : undefined}
         >
@@ -167,9 +218,21 @@ function Shell() {
           <ul className="nav-list">
             {navItem('dashboard', S.nav.dashboard, <IconHome />)}
             {navItem('library', S.nav.library, <IconStack />)}
+            {navItem('lists', 'Lists', <IconList />)}
+            {navItem('stats', 'Stats', <IconGrid />)}
+            {navItem('import', 'Import', <IconPlus />)}
             {navItem('settings', S.nav.settings, <IconGear />)}
           </ul>
         </nav>
+        <button
+          type="button"
+          className="button"
+          onClick={() => app.setPaletteOpen(true)}
+          aria-keyshortcuts="Control+K Meta+K"
+        >
+          <IconSearch />
+          <span>Search &amp; commands</span>
+        </button>
         <button
           type="button"
           className="button button-primary"
@@ -204,8 +267,18 @@ function Shell() {
         {app.route.name === 'library' && <Library />}
         {app.route.name === 'item' && <ItemPage id={app.route.id} key={app.route.id} />}
         {app.route.name === 'settings' && <Settings tab={app.route.tab} />}
+        {app.route.name === 'pick' && <PickPage />}
+        {app.route.name === 'health' && <HealthPage />}
+        {app.route.name === 'lists' && <ListsPage />}
+        {app.route.name === 'list' && <ListDetailPage id={app.route.id} key={app.route.id} />}
+        {app.route.name === 'stats' && <StatsPage />}
+        {app.route.name === 'goals' && <GoalsPage />}
+        {app.route.name === 'upcoming' && <UpcomingPage />}
+        {app.route.name === 'import' && <ImportPage tab={app.route.tab} />}
       </main>
       {app.addOpen && <AddDialog onClose={app.closeAdd} />}
+      {app.paletteOpen && <PaletteHost />}
+      {app.captureOpen && !info?.readOnly && <QuickCapture onClose={() => app.setCaptureOpen(false)} />}
       {app.shortcutsOpen && (
         <Dialog title="Keyboard shortcuts" onClose={() => app.setShortcutsOpen(false)} size="medium">
           <table className="table">
@@ -234,4 +307,55 @@ function Shell() {
       )}
     </>
   );
+}
+
+/** Builds the command registry from current app state and renders the palette. */
+function PaletteHost() {
+  const app = useApp();
+  const toast = useToast();
+  const [themes, setThemes] = useState<ThemeSummary[]>([]);
+  useEffect(() => {
+    void call(getApi().themes.list())
+      .then(setThemes)
+      .catch(() => undefined);
+  }, []);
+  const layout = app.layouts?.dashboard ?? DEFAULT_LAYOUTS.dashboard;
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        navigate: app.navigate,
+        openAdd: app.openAdd,
+        openCapture: () => app.setCaptureOpen(true),
+        showShortcuts: () => app.setShortcutsOpen(true),
+        exportJson: async () => {
+          const r = await call(getApi().data.exportJson());
+          if (r) toast.success(`Saved ${r.fileLabel}.`);
+        },
+        startSteamSync: () => app.navigate({ name: 'import', tab: 'sources' }),
+        switchTheme: async (id, name) => {
+          await app.updateSettings({ activeThemeId: id });
+          app.reloadTheme();
+          toast.success(`Theme: ${name}.`);
+        },
+        toggleComponent: async (id, label) => {
+          try {
+            const entries = layout.map((e) => (e.id === id ? { ...e, visible: !e.visible } : e));
+            app.setLayouts(await call(getApi().layouts.set({ surface: 'dashboard', entries })));
+            toast.success(
+              `${label} ${entries.find((e) => e.id === id)?.visible ? 'shown' : 'hidden'} on the dashboard.`,
+            );
+          } catch (e) {
+            toast.error(errorOf(e));
+          }
+        },
+        themes: [{ id: 'system', name: 'System' }, ...themes.filter((t) => t.id !== 'system')],
+        dashboardComponents: layout.map((e) => ({
+          id: e.id,
+          label: COMPONENT_LABELS[e.id as DashboardComponentId] ?? e.id,
+          visible: e.visible,
+        })),
+      }),
+    [app, themes, layout, toast],
+  );
+  return <CommandPalette commands={commands} onClose={() => app.setPaletteOpen(false)} />;
 }

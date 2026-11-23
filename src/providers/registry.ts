@@ -38,4 +38,6 @@ export const OUTBOUND_HOSTS = [
   'www.wikidata.org',
   'graphql.anilist.co',
   's4.anilist.co',
+  // Library sources (1.2): Steam Web API, called only with the user's own key.
+  'api.steampowered.com',
 ] as const;

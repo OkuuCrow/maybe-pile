@@ -38,6 +38,10 @@ A complete, valid example is [`examples/ocean.mptheme.json`](../examples/ocean.m
 | `tokens.colors.accent` | hex | `--mp-accent` (primary buttons, links, progress) |
 | `tokens.colors.onAccent` | hex | `--mp-on-accent` (text on accent) |
 | `tokens.colors.border` | hex | `--mp-border` (control borders) |
+| `tokens.colors.snoozed` *(optional, 1.2)* | hex | `--mp-state-snoozed` ("Snoozed" badge) |
+| `tokens.colors.ignored` *(optional, 1.2)* | hex | `--mp-state-ignored` ("Ignored" badge) |
+| `tokens.colors.inPile` *(optional, 1.2)* | hex | `--mp-state-in-pile` ("In pile" badge) |
+| `tokens.colors.newItem` *(optional, 1.2)* | hex | `--mp-state-new` ("New" badge) |
 | `tokens.colors.focus` | hex | `--mp-focus` (focus ring) |
 | `tokens.colors.planned` / `inProgress` / `completed` / `onHold` / `dropped` | hex | `--mp-status-*` |
 | `tokens.colors.success` / `warning` / `danger` | hex | `--mp-success`, `--mp-warning`, `--mp-danger` |
@@ -99,3 +103,14 @@ Rules:
 ## Versioning and migration policy
 
 `schemaVersion` changes only when a file written by the new version could be misread by an older one (for example, a token whose meaning changes). Adding new **optional** tokens would also bump the version, because unknown keys are rejected. When the version bumps, the importer keeps accepting all older versions and upgrades them in memory (filling new tokens from the built-in theme that matches `colorScheme`). Exports always write the newest version.
+
+## Feature-pack additions (1.2)
+
+### State badge tokens
+
+`snoozed`, `ignored`, `inPile` and `newItem` are **optional**, so theme files made for 1.0/1.1 stay valid. Missing values fall back to safe defaults for the theme's colour scheme (light: `#5B4B8A`, `#57534B`, `#276B2B`, `#1F5FA6`; dark: `#C4B5FD`, `#ABA79F`, `#7BD389`, `#7DB9F0`). All of them pass AA (4.5:1) on both built-in surfaces, and the contrast checker now covers these four pairs too. Badges always combine an icon and text with the colour. `examples/ocean.mptheme.json` sets them explicitly.
+
+### Layout schema v2
+
+`schemaVersion: 2` adds the dashboard components **`pileHealth`** (Pile Health), **`upcoming`** (Upcoming releases), **`goals`**, **`lists`** and **`statsSummary`** (Stats summary, hidden by default). `pick` (Pick for Me) and `upNext` already existed. Version-1 layout files are **migrated** on import: the new components are appended with their default visibility, with no "missing component" notice. Saved layouts in the database get the new components appended the same way. Files with an unknown component id or a newer `schemaVersion` are still rejected. [`examples/focused.mplayout.json`](../examples/focused.mplayout.json) is a v2 file.
+

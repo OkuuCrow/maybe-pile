@@ -22,6 +22,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providerEnabled: {},
   csvBom: true,
   lastSeenSchemaVersion: 0,
+  upNextMax: 10,
+  pick: {
+    favor: 'neutral',
+    favorInProgress: false,
+    includeInProgress: false,
+    includeOnHold: false,
+    skipDays: 7,
+  },
+  pileHealth: { enabled: true, plannedStaleMonths: 12, inProgressStaleDays: 60 },
+  releaseRadar: { includeOnHold: false, notifications: false, refreshOnStart: false },
+  quickCapture: { globalShortcut: false, accelerator: 'CommandOrControl+Shift+Space' },
+  stats: { showStreaks: false },
+  importUndoRetentionDays: 30,
 };
 
 export function readSettings(

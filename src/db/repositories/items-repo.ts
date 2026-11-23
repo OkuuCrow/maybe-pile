@@ -56,6 +56,7 @@ export interface ItemRow {
   date_started: string | null;
   date_completed: string | null;
   pass: number;
+  /** From the `up_next` table (joined), not a column on items. */
   up_next_position: number | null;
   artwork_id: string | null;
   progress_pct: number | null;
@@ -450,7 +451,8 @@ export function recomputeProgress(db: Db, id: string): ProgressSummary {
 
 export function getItemRow(db: Db, id: string, includeDeleted = false): ItemRow | undefined {
   return db.get<ItemRow>(
-    `SELECT * FROM items WHERE id = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}`,
+    `SELECT items.*, (SELECT u.position FROM up_next u WHERE u.item_id = items.id) AS up_next_position
+     FROM items WHERE id = ? ${includeDeleted ? '' : 'AND deleted_at IS NULL'}`,
     [id],
   );
 }
@@ -753,6 +755,20 @@ export function loadDetail(db: Db, id: string): ItemDetail | null {
     milestones: row.type === 'game' ? loadMilestones(db, id) : [],
     progress: computeProgress(db, id),
     links: linksFromExternalIds(row.type, meta.externalIds),
+    lists: db.all<{ id: string; name: string }>(
+      'SELECT l.id, l.name FROM lists l JOIN list_items li ON li.list_id = l.id WHERE li.item_id = ? ORDER BY l.position',
+      [id],
+    ),
+    snoozedUntil:
+      db.get<{ until: string }>("SELECT until FROM item_snoozes WHERE item_id = ? AND reason <> 'keep'", [id])
+        ?.until ?? null,
+    goneFromSources: db
+      .all<{ label: string }>(
+        `SELECT DISTINCT s.label FROM library_source_entries e JOIN library_sources s ON s.id = e.source_id
+         WHERE e.item_id = ? AND e.removed_at IS NOT NULL ORDER BY s.label`,
+        [id],
+      )
+      .map((r) => r.label),
   };
 }
 
@@ -841,9 +857,47 @@ const SORT_SQL: Record<LibraryQuery['sort'], { expr: string; nullsLast: boolean 
   progress: { expr: 'i.progress_pct', nullsLast: true },
 };
 
-export function buildLibraryWhere(q: LibraryQuery): { where: string; params: (string | number)[] } {
+/** Date context for the Pile Health library filter. */
+export interface HealthFilterContext {
+  today: string;
+  /** Planned items added on or before this date are stale. */
+  plannedCutoff: string;
+  /** In-progress items whose last activity is on or before this date are stale. */
+  idleCutoff: string;
+}
+
+/** Local date of an item's latest activity (progress, viewing, episode), else start/added date. */
+export const LAST_ACTIVITY_SQL = `COALESCE(
+  (SELECT max(d) FROM (
+     SELECT max(substr(COALESCE(p.occurred_at, p.recorded_at), 1, 10)) AS d FROM progress_events p WHERE p.item_id = i.id AND p.deleted_at IS NULL
+     UNION ALL SELECT max(substr(COALESCE(v.watched_at, v.created_at), 1, 10)) FROM viewing_events v WHERE v.item_id = i.id
+     UNION ALL SELECT max(substr(e.watched_at, 1, 10)) FROM episodes e WHERE e.item_id = i.id AND e.watched = 1)),
+  i.date_started, i.date_added)`;
+
+export function buildLibraryWhere(
+  q: LibraryQuery,
+  health?: HealthFilterContext,
+): { where: string; params: (string | number)[] } {
   const clauses: string[] = ['i.deleted_at IS NULL'];
   const params: (string | number)[] = [];
+  if (q.listId) {
+    clauses.push('EXISTS (SELECT 1 FROM list_items li WHERE li.item_id = i.id AND li.list_id = ?)');
+    params.push(q.listId);
+  }
+  if (q.upNextOnly) clauses.push('EXISTS (SELECT 1 FROM up_next u WHERE u.item_id = i.id)');
+  if (q.health === 'snoozed' && health) {
+    clauses.push(
+      "EXISTS (SELECT 1 FROM item_snoozes z WHERE z.item_id = i.id AND z.reason <> 'keep' AND z.until >= ?)",
+    );
+    params.push(health.today);
+  }
+  if (q.health === 'stale' && health) {
+    clauses.push(
+      `NOT EXISTS (SELECT 1 FROM item_snoozes z WHERE z.item_id = i.id AND z.until >= ?)
+       AND ((i.status = 'planned' AND i.date_added <= ?) OR (i.status = 'in_progress' AND ${LAST_ACTIVITY_SQL} <= ?))`,
+    );
+    params.push(health.today, health.plannedCutoff, health.idleCutoff);
+  }
   if (q.types.length > 0) {
     clauses.push(`i.type IN (${q.types.map(() => '?').join(',')})`);
     params.push(...q.types);
@@ -891,8 +945,8 @@ export function buildLibraryWhere(q: LibraryQuery): { where: string; params: (st
   return { where: clauses.join(' AND '), params };
 }
 
-export function queryLibrary(db: Db, q: LibraryQuery): LibraryPage {
-  const { where, params } = buildLibraryWhere(q);
+export function queryLibrary(db: Db, q: LibraryQuery, health?: HealthFilterContext): LibraryPage {
+  const { where, params } = buildLibraryWhere(q, health);
   const total = db.get<{ n: number }>(`SELECT count(*) AS n FROM items i WHERE ${where}`, params)?.n ?? 0;
   const sort = SORT_SQL[q.sort];
   const dir = q.direction === 'asc' ? 'ASC' : 'DESC';

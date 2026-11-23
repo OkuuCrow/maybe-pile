@@ -9,14 +9,15 @@ import type {
 import type { ThemeDetailView } from '../../../shared/ipc-contract';
 import { COMPONENT_LABELS, type LayoutSurface } from '../../../domain/layouts';
 import {
-  COLOR_TOKENS,
+  ALL_COLOR_TOKENS,
+  colorOf,
+  type AnyColorToken,
   DENSITY_OPTIONS,
   FONT_FAMILY_OPTIONS,
   FONT_SCALE_MAX,
   FONT_SCALE_MIN,
   RADIUS_OPTIONS,
   contrastWarnings,
-  type ColorToken,
   type ThemeTokens,
 } from '../../../domain/themes';
 import { HEX_COLOR_RE } from '../../../domain/contrast';
@@ -30,6 +31,8 @@ import { Checkbox, ListInput, NumberField, SelectField, TextField } from '../../
 import { IconArrowDown, IconArrowUp, IconCheck, IconAlert } from '../../components/Icons';
 import { ExternalLink } from '../item/LinksPanel';
 import { ImportPreviewDialog } from './ImportPreviewDialog';
+import { FeaturesSettings } from './FeaturesSettings';
+import { SteamSetupForm } from '../import/SteamSetup';
 import { REGIONS } from './regions';
 
 const TAB_LABELS: Record<SettingsTab, string> = {
@@ -37,6 +40,7 @@ const TAB_LABELS: Record<SettingsTab, string> = {
   layout: 'Layout',
   providers: 'Providers',
   library: 'Custom fields & series',
+  features: 'Features',
   backup: 'Backup & Restore',
   data: 'Data & Behavior',
   about: 'About',
@@ -68,6 +72,7 @@ export function Settings({ tab }: { tab: SettingsTab }) {
           {tab === 'layout' && <LayoutTab />}
           {tab === 'providers' && <ProvidersTab />}
           {tab === 'library' && <LibraryTab />}
+          {tab === 'features' && <FeaturesSettings />}
           {tab === 'backup' && <BackupTab />}
           {tab === 'data' && <DataTab />}
           {tab === 'about' && <AboutTab />}
@@ -79,7 +84,11 @@ export function Settings({ tab }: { tab: SettingsTab }) {
 
 /* ------------------------------------------------------------------ appearance */
 
-const COLOR_LABELS: Record<ColorToken, string> = {
+const COLOR_LABELS: Record<AnyColorToken, string> = {
+  snoozed: 'Badge: Snoozed',
+  ignored: 'Badge: Ignored',
+  inPile: 'Badge: In pile',
+  newItem: 'Badge: New',
   bg: 'Background',
   surface: 'Surface (cards)',
   surfaceAlt: 'Alternate surface',
@@ -286,7 +295,9 @@ function ThemeEditor({
   const [tokens, setTokens] = useState<ThemeTokens>(theme.tokens);
   const [busy, setBusy] = useState(false);
   const warnings = contrastWarnings(tokens);
-  const valid = Object.values(tokens.colors).every((c) => HEX_COLOR_RE.test(c)) && name.trim().length > 0;
+  const valid =
+    Object.values(tokens.colors).every((c) => c === undefined || HEX_COLOR_RE.test(c)) &&
+    name.trim().length > 0;
 
   // Live preview while editing (validated values only; applied via setProperty).
   useEffect(() => {
@@ -297,7 +308,7 @@ function ThemeEditor({
       );
   }, [tokens, valid, theme.id]);
 
-  const setColor = (k: ColorToken, v: string) =>
+  const setColor = (k: AnyColorToken, v: string) =>
     setTokens((t) => ({ ...t, colors: { ...t.colors, [k]: v } }));
   const save = async () => {
     setBusy(true);
@@ -364,11 +375,11 @@ function ThemeEditor({
       </div>
       <fieldset className="color-grid">
         <legend>Colors</legend>
-        {COLOR_TOKENS.map((k) => (
+        {ALL_COLOR_TOKENS.map((k) => (
           <ColorInput
             key={k}
             label={COLOR_LABELS[k]}
-            value={tokens.colors[k]}
+            value={colorOf(tokens, k)}
             onChange={(v) => setColor(k, v)}
           />
         ))}
@@ -659,6 +670,7 @@ function ProvidersTab() {
       {providers.data?.map((p) => (
         <ProviderCard key={p.id} p={p} onChange={(list) => providers.setData(list)} />
       ))}
+      <SteamProviderSection />
     </div>
   );
 }
@@ -1232,5 +1244,22 @@ function AboutTab() {
         Keyboard shortcuts
       </button>
     </div>
+  );
+}
+
+/** Settings → Providers → Steam: same form as the Import page. */
+function SteamProviderSection() {
+  const q = useAsync(() => call(getApi().sources.list()), []);
+  const steam = (q.data ?? []).filter((s) => s.kind === 'steam');
+  return (
+    <section className="card provider-card" aria-labelledby="steam-provider">
+      <h3 id="steam-provider">Steam (library import)</h3>
+      <p className="muted">
+        Imports the games you own using your own Steam Web API key. Review and import them under{' '}
+        <a href="#/import/sources">Import → Game libraries</a>.
+      </p>
+      {q.error && <ErrorBox error={q.error} onRetry={q.reload} />}
+      {q.data && <SteamSetupForm source={steam[0] ?? null} onSaved={(l) => q.setData(l)} />}
+    </section>
   );
 }

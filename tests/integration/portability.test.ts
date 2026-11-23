@@ -236,6 +236,9 @@ function await_default() {
     direction: 'asc' as const,
     offset: 0,
     limit: 100,
+    listId: null,
+    upNextOnly: false,
+    health: null,
   };
 }
 
@@ -472,7 +475,7 @@ describe('themes and layouts persistence', () => {
       env.custom.importTheme('{"format":"maybepile-theme","schemaVersion":1,"name":"x","tokens":{}}'),
     ).toThrow(/not valid/);
     const lay = env.custom.importLayout(readFileSync('examples/focused.mplayout.json', 'utf8'));
-    expect(lay.dashboard[0]?.id).toBe('continue');
+    expect(lay.dashboard[0]?.id).toBe('upNext');
     const partial = env.custom.importLayout(
       JSON.stringify({
         format: 'maybepile-layout',

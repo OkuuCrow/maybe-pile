@@ -47,7 +47,7 @@ export class CsvParseError extends Error {
 }
 
 /** Parses RFC 4180 CSV (CRLF or LF line endings, optional BOM). Throws CsvParseError on malformed quoting. */
-export function parseCsv(input: string, maxRows = 200_000): string[][] {
+export function parseCsv(input: string, maxRows = 200_000, delimiter = ','): string[][] {
   const s = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
   const rows: string[][] = [];
   let row: string[] = [];
@@ -75,7 +75,7 @@ export function parseCsv(input: string, maxRows = 200_000): string[][] {
         inQuotes = false;
         i++;
         const next = s[i];
-        if (next !== undefined && next !== ',' && next !== '\n' && next !== '\r') {
+        if (next !== undefined && next !== delimiter && next !== '\n' && next !== '\r') {
           throw new CsvParseError('Unexpected character after closing quote.', line);
         }
         continue;
@@ -89,7 +89,7 @@ export function parseCsv(input: string, maxRows = 200_000): string[][] {
       if (field !== '') throw new CsvParseError('Quote in the middle of an unquoted field.', line);
       inQuotes = true;
       i++;
-    } else if (c === ',') {
+    } else if (c === delimiter) {
       row.push(field);
       field = '';
       i++;
@@ -117,4 +117,23 @@ export function splitList(cell: string): string[] {
     .split(';')
     .map((v) => v.trim())
     .filter((v) => v !== '');
+}
+
+/**
+ * Guesses the delimiter from the first line (outside quotes): the most frequent
+ * of comma, semicolon, tab and pipe. Defaults to comma.
+ */
+export function detectDelimiter(input: string): ',' | ';' | '\t' | '|' {
+  const s = input.charCodeAt(0) === 0xfeff ? input.slice(1) : input;
+  const counts = { ',': 0, ';': 0, '\t': 0, '|': 0 };
+  let inQuotes = false;
+  for (let i = 0; i < s.length && i < 10_000; i++) {
+    const c = s[i];
+    if (c === '"') inQuotes = !inQuotes;
+    else if (!inQuotes && (c === '\n' || c === '\r')) break;
+    else if (!inQuotes && c !== undefined && c in counts) counts[c as keyof typeof counts]++;
+  }
+  let best: keyof typeof counts = ',';
+  for (const k of Object.keys(counts) as (keyof typeof counts)[]) if (counts[k] > counts[best]) best = k;
+  return best;
 }

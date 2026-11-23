@@ -1,6 +1,6 @@
 # Verification log
 
-What was actually run while building Maybe Pile 1.0.0, and the results. Nothing is marked as verified unless it was run here.
+What was actually run while building Maybe Pile (1.0.0, and the 1.2.0 feature pack), and the results. Nothing is marked as verified unless it was run here.
 
 ## Environment
 
@@ -13,7 +13,64 @@ What was actually run while building Maybe Pile 1.0.0, and the results. Nothing 
 | Shell quirk | The environment exports `ELECTRON_RUN_AS_NODE=1`, which makes Electron start as plain Node. All launch scripts and e2e tests remove it. |
 | OS policy | Windows Application Control blocks unsigned executables (see packaging below). |
 
-## Commands and results (final run)
+## 1.2.0 feature pack — what was run (23 Nov 2026)
+
+Same machine and environment as below. No new dependencies were added, so no install step was needed (`node_modules` unchanged).
+
+| Command | Result |
+| --- | --- |
+| `npm run format:check` | ✅ All matched files use Prettier code style |
+| `npm run lint` (`--max-warnings 0`) | ✅ 0 errors, 0 warnings |
+| `npm run typecheck` (3 strict configs) | ✅ 0 errors |
+| `npm test` | ✅ **15 files, 416 tests passed** (unit 5 files / 269 tests, integration 8 / 112, ui 2 / 35). Before the pack: 11 files / 281 tests. |
+| `npm run test:a11y` | ✅ 26 axe-checked UI tests passed (9 non-a11y UI tests skipped by the filter) |
+| `npm run test:e2e` (build + Playwright for Electron, `ELECTRON_RUN_AS_NODE` removed) | ✅ **1 passed** (1.1 min). The flow now also opens the command palette (Ctrl+K → item), adds an item to a new list, rolls Pick for Me, opens Stats, and loads a pasted game list into the review listbox. |
+| `npm run bench` | ✅ Numbers below |
+| `npm run dist:win` (`electron-builder --win nsis portable`) | ✅ Built `release/Maybe-Pile-Setup-1.2.0.exe` (121.7 MB) and `release/Maybe-Pile-Portable-1.2.0.exe` (110.7 MB), **unsigned** (no certificate configured) |
+| Packaged app check | ⚠️ Not launched: Windows Application Control blocks unsigned executables on this machine (same as 1.0). Verified instead by inspecting `release/win-unpacked/resources/app.asar`: `package.json` version 1.2.0; `dist/main/main.cjs` contains migration `feature_pack`, `api.steampowered.com`, `IPlayerService/GetOwnedGames`, `sources:startFetch`, `release_notifications`, `QuickCaptureShortcut`; the renderer bundle contains the command palette and Year in Review; the test Steam key string does not appear. |
+| `npm run test:coverage`, `npm audit`, `npm run smoke:providers` | **Not run** for 1.2.0. |
+| Live Steam Web API call | **Not made.** There was no Steam key in this environment. All Steam behaviour (vanity resolution, private profile, 401/403, 429 + Retry-After, 5xx backoff, timeouts, malformed/partial JSON, duplicate app ids, unicode, 10,500-game library, cancel) is verified against mocked HTTP only. Manual steps: [steam-import.md](steam-import.md#manual-verification-with-your-own-key). |
+| Steam terms research | Official pages read on 23 Nov 2026: Steam Web API Terms of Use, IPlayerService, ISteamUser, IStoreService, Community icon assets (findings in [providers.md](providers.md#library-sources-12)). `developer.valvesoftware.com` returned HTTP 403 and was not read. |
+
+### Benchmark (`npm run bench`, 10,000 items / 100,000 episodes / 100,000 progress rows)
+
+```
+insert 10,000 items (incl. 2,000 TV × 50 eps)      12534.6 ms
+episode rows: 100000
+library page (default sort, 200 rows)                 10.6 ms
+full-text search "riv"                                 8.0 ms
+search "pokemon" (diacritics)                          5.5 ms
+filter type+status+tag+rating, sort by title          11.2 ms
+sort by progress, offset 9,000                        40.1 ms
+dashboard                                            160.1 ms
+load TV detail (50 episodes)                           0.9 ms
+mark 50 episodes watched                               6.7 ms
+add 100,000 progress history rows                   1946.3 ms
+stats (all time)                                     907.3 ms
+year in review                                         3.6 ms
+pile health overview                                 808.6 ms
+library filter: stale (Pile Health)                  325.1 ms
+pick for me (all candidates)                          52.2 ms
+library source review: 10,000 rows                   260.5 ms
+library source review: search within 10,000           53.7 ms
+```
+
+Two problems were found and fixed by these runs. Stats took **9.1 s** before caching the `Intl.DateTimeFormat` used for UTC → local date conversion, and **0.9 s** after. The CSV parser rejected quoted fields followed by `;`/tab delimiters (found by a unit test).
+
+### New test files
+
+| File | Covers |
+| --- | --- |
+| `tests/unit/feature-domain.test.ts` | Calendar and time-zone boundaries; Pick weights (never zero), seeded determinism, every constraint, empty-pool culprit, time fit; Pile Health thresholds and snooze expiry (injected dates), pile stats/trend/small samples; Stats aggregation, year boundaries, TTC buckets, streaks, Year in Review missing data; Goals periods and pace; `.ics` escaping, octet folding, UID stability; Release Radar precision and today/tomorrow (including the year boundary); Steam account/key validation (URL host checks), non-game heuristics, snapshot diff; log redaction of keys and SteamIDs; fuzzy ranking determinism; Goodreads / Letterboxd / generic CSV mapping, rating scales, dates, delimiter + BOM + quoted newlines; layout v1→v2 migration; optional theme tokens and AA contrast. |
+| `tests/integration/steam-import.test.ts` | Key storage (never in IPC responses, logs, DB or JSON export; encrypted file), field-level validation, IPC schema rejection, store-link opener; vanity resolution success/failure; private profile; 401/403; 429 + Retry-After (retry, and give up when too long); 5xx backoff; timeout/DNS; truncated JSON, wrong types, missing names, unicode, duplicate app ids; cancel keeps the snapshot; 10,500-game library timing; unplayed / played / non-game filters; ignore persistence across syncs; already-in-pile detection (never duplicated); title-only duplicate warning; import with tags/list/provenance/playtime; **mid-batch failure rolls back that chunk with no orphan rows**; undo (edited vs untouched; list membership isn't an edit); retention purge; re-sync diff (new/changed/removed), "Not in Steam" flag, opt-in playtime update; manual game-list source. |
+| `tests/integration/feature-pack.test.ts` | Up Next max size, UNIQUE positions through 30 reorders, cascade, library filter; lists (membership, ordering, duplicate names, delete keeps items, JSON merge-by-name and CSV `lists` round-trip, Up Next order on import); Pile Health (stale detection, snooze/keep/unsnooze, expiry, purge, library filters, off switch); Pick service (exclusions, seeds, skip, queue, start, history); Goals (period boundaries, scope by type/list, pages, episodes by local date, hours within the period, un-completing, archive/delete); Stats (aggregation, formula-safe CSV, 10k items / 100k rows timing); Release Radar with a fake refresh port (precision, provenance-respecting refresh applies only `releaseDate`, `.ics`, notifications once, today/tomorrow, notifier scheduling with a mocked Notification); Quick Capture global-shortcut conflicts; tracker imports (Goodreads ISBN conflicts, skip/duplicate only, undo; Letterboxd zip with `deleted/` entries ignored; generic CSV remap, Windows-1252, formula cells stay text and are neutralized on export, profiles, 25 MB cap, missing-title mapping); **full backup → restore with every new entity, no Steam key in the archive**; JSON v2 round-trip into a fresh library (sources re-linked, undo works); v1 export still accepted, newer refused; **migration v3 → v4** with data, order preserved, column dropped, FK/integrity clean, failure-injection rollback; pre-migration snapshot via `DatabaseManager`. |
+| `tests/ui/features.test.tsx` | axe + behaviour: Steam review screen (unplayed default, Space / Shift+↓ / Ctrl+A / `I`, import options → confirm → result with undo), Steam setup field errors (key never echoed), Pick for Me (live region, Start with confirmation, empty pool → loosen), dashboard widgets, Pile Health snooze dialog, Lists create/detail/delete-keeps-items, Stats charts + data table + Year in Review, Goals editor validation + pace text, command palette (Ctrl+K, Enter navigates, Esc returns focus), command registry, Quick Capture (validation, duplicate warning, no network). |
+
+### Manual walkthrough (1.2.0)
+
+Covered by the **automated e2e run in the real Electron app** (palette, lists, Pick for Me, Stats, game-list review) and the UI tests above. A person did **not** do a hands-on pass of every definition-of-done item in a running window, a manual screen-reader pass, or a live Steam connection.
+
+## 1.0.0 — commands and results (final run)
 
 | Command | Result |
 | --- | --- |

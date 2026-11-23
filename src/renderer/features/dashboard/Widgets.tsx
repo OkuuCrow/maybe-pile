@@ -1,12 +1,11 @@
-/** Interactive dashboard widgets: Up Next queue, "Pick something for me", and This year. */
-import { useId, useState } from 'react';
-import { MEDIA_TYPES, type MediaType } from '../../../shared/enums';
-import type { DashboardData, ItemSummary } from '../../../shared/types';
+/** Interactive dashboard widgets: Up Next queue and This year. (Pick for Me lives in features/pick.) */
+import { useState } from 'react';
+import { MEDIA_TYPES } from '../../../shared/enums';
+import type { DashboardData } from '../../../shared/types';
 import { call, errorOf, getApi } from '../../app/api';
 import { useApp } from '../../app/context';
 import { typeLabelPlural } from '../../app/strings';
 import { useToast } from '../../app/toast';
-import { Cover, StatusBadge, TypeBadge } from '../../components/Bits';
 import { IconArrowDown, IconArrowUp, IconClose, TypeIcon } from '../../components/Icons';
 
 export function UpNextWidget({ items }: { items: DashboardData['upNext'] }) {
@@ -45,6 +44,17 @@ export function UpNextWidget({ items }: { items: DashboardData['upNext'] }) {
   return (
     <>
       <h2 id="dash-upNext">Up Next</h2>
+      {list.length > 0 && (
+        <p className="muted">
+          {list.length} of {app.settings?.upNextMax ?? 10} ·{' '}
+          <a
+            href="#/library"
+            onClick={() => sessionStorage.setItem('mp-library-hint', JSON.stringify({ upNextOnly: true }))}
+          >
+            View in Library
+          </a>
+        </p>
+      )}
       {list.length === 0 ? (
         <p className="muted">
           Your queue is empty. Use “Add to Up Next” on an item (or select items in the Library) to line up
@@ -94,94 +104,6 @@ export function UpNextWidget({ items }: { items: DashboardData['upNext'] }) {
             </li>
           ))}
         </ol>
-      )}
-    </>
-  );
-}
-
-export function PickWidget({ plannedCount }: { plannedCount: number }) {
-  const app = useApp();
-  const toast = useToast();
-  const id = useId();
-  const [type, setType] = useState<MediaType | 'any'>('any');
-  const [pick, setPick] = useState<ItemSummary | null | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const roll = async () => {
-    setBusy(true);
-    try {
-      setPick(
-        await call(
-          getApi().items.pickRandom({ types: type === 'any' ? [] : [type], excludeId: pick?.id ?? null }),
-        ),
-      );
-    } catch (e) {
-      toast.error(errorOf(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-  const queue = async (p: ItemSummary) => {
-    try {
-      await call(getApi().items.setUpNext({ id: p.id, queued: true }));
-      app.bumpData();
-      toast.success(`Added “${p.title}” to Up Next.`);
-    } catch (e) {
-      toast.error(errorOf(e));
-    }
-  };
-  return (
-    <>
-      <h2 id="dash-pick">Pick something for me</h2>
-      {plannedCount === 0 ? (
-        <p className="muted">Nothing is Planned yet. Add a few things to your pile and come back.</p>
-      ) : (
-        <>
-          <div className="row wrap">
-            <label htmlFor={`${id}-type`}>From</label>
-            <select
-              id={`${id}-type`}
-              className="input input-inline"
-              value={type}
-              onChange={(e) => (setType(e.target.value as MediaType | 'any'), setPick(undefined))}
-            >
-              <option value="any">anything Planned</option>
-              {MEDIA_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {typeLabelPlural(t)}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="button button-primary"
-              onClick={() => void roll()}
-              disabled={busy}
-            >
-              {pick ? 'Pick again' : 'Pick for me'}
-            </button>
-          </div>
-          <div aria-live="polite" className="pick-result">
-            {pick === null && <p className="muted">No Planned items of that type.</p>}
-            {pick && (
-              <div className="pick-card">
-                <Cover url={pick.thumbUrl} title={pick.title} type={pick.type} size="small" />
-                <div className="pick-text">
-                  <a href={`#/item/${pick.id}`} className="continue-title">
-                    {pick.title}
-                    {pick.year ? ` (${pick.year})` : ''}
-                  </a>
-                  <span className="item-meta">
-                    <TypeBadge type={pick.type} />
-                    <StatusBadge status={pick.status} />
-                  </span>
-                  <button type="button" className="button button-small" onClick={() => void queue(pick)}>
-                    Add to Up Next
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </>
       )}
     </>
   );

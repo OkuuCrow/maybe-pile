@@ -239,6 +239,10 @@ export const LibraryQuerySchema = z.strictObject({
   direction: z.enum(['asc', 'desc']),
   offset: z.number().int().min(0).max(10_000_000),
   limit: z.number().int().min(1).max(LIMITS.pageSize),
+  /* Added in 1.2; defaults keep older saved queries valid. */
+  listId: IdSchema.nullable().default(null),
+  upNextOnly: z.boolean().default(false),
+  health: z.enum(['stale', 'snoozed']).nullable().default(null),
 });
 export type LibraryQuery = z.infer<typeof LibraryQuerySchema>;
 
@@ -256,6 +260,9 @@ export const DEFAULT_LIBRARY_QUERY: LibraryQuery = {
   direction: 'desc',
   offset: 0,
   limit: 200,
+  listId: null,
+  upNextOnly: false,
+  health: null,
 };
 
 export const DuplicateCheckSchema = z.strictObject({
@@ -285,6 +292,16 @@ export const BulkActionSchema = z.discriminatedUnion('action', [
   }),
   z.strictObject({ action: z.literal('delete'), ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds) }),
   z.strictObject({ action: z.literal('addUpNext'), ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds) }),
+  z.strictObject({
+    action: z.literal('addToList'),
+    ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds),
+    listId: IdSchema,
+  }),
+  z.strictObject({
+    action: z.literal('snooze'),
+    ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds),
+    until: IsoDateSchema,
+  }),
 ]);
 export type BulkActionInput = z.infer<typeof BulkActionSchema>;
 
@@ -406,6 +423,44 @@ export const SeriesMembershipSchema = z.strictObject({
 
 export const RegionSchema = z.string().regex(/^[A-Z]{2}$/, 'Use a two-letter region code such as US or GB.');
 
+export const PickSettingsSchema = z.strictObject({
+  favor: z.enum(['neutral', 'older', 'newer']),
+  favorInProgress: z.boolean(),
+  includeInProgress: z.boolean(),
+  includeOnHold: z.boolean(),
+  /** Days a "Not now" keeps an item out of picks. */
+  skipDays: z.number().int().min(1).max(365),
+});
+export type PickSettings = z.infer<typeof PickSettingsSchema>;
+
+export const PileHealthSettingsSchema = z.strictObject({
+  enabled: z.boolean(),
+  plannedStaleMonths: z.number().int().min(1).max(120),
+  inProgressStaleDays: z.number().int().min(7).max(3650),
+});
+export type PileHealthSettings = z.infer<typeof PileHealthSettingsSchema>;
+
+export const ReleaseRadarSettingsSchema = z.strictObject({
+  includeOnHold: z.boolean(),
+  notifications: z.boolean(),
+  refreshOnStart: z.boolean(),
+});
+export type ReleaseRadarSettings = z.infer<typeof ReleaseRadarSettingsSchema>;
+
+/** Electron accelerator; validated against a strict pattern (modifiers + one key). */
+export const AcceleratorSchema = z
+  .string()
+  .max(60)
+  .regex(
+    /^(?:(?:CommandOrControl|CmdOrCtrl|Control|Ctrl|Alt|Option|Shift|Super|Command|Cmd)\+){1,3}(?:[A-Z0-9]|F(?:[1-9]|1[0-2])|Space)$/,
+    'Use modifiers plus one key, for example CommandOrControl+Shift+Space.',
+  );
+
+export const QuickCaptureSettingsSchema = z.strictObject({
+  globalShortcut: z.boolean(),
+  accelerator: AcceleratorSchema,
+});
+
 export const AppSettingsSchema = z.strictObject({
   activeThemeId: z.string().min(1).max(80),
   region: RegionSchema,
@@ -415,6 +470,14 @@ export const AppSettingsSchema = z.strictObject({
   providerEnabled: z.record(z.string().max(40), z.boolean()),
   csvBom: z.boolean(),
   lastSeenSchemaVersion: z.number().int().min(0),
+  /* ---- feature pack (1.2) ---- */
+  upNextMax: z.number().int().min(3).max(25),
+  pick: PickSettingsSchema,
+  pileHealth: PileHealthSettingsSchema,
+  releaseRadar: ReleaseRadarSettingsSchema,
+  quickCapture: QuickCaptureSettingsSchema,
+  stats: z.strictObject({ showStreaks: z.boolean() }),
+  importUndoRetentionDays: z.number().int().min(1).max(365),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
@@ -470,3 +533,125 @@ export const ImportApplySchema = z.strictObject({
   confirmation: z.string().max(40),
 });
 export type ImportApplyInput = z.infer<typeof ImportApplySchema>;
+
+/* ---------- feature pack (1.2) ---------- */
+
+export const LIST_COLORS = ['slate', 'blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink'] as const;
+export const LIST_ICONS = ['list', 'star', 'heart', 'ghost', 'users', 'plane', 'flame', 'leaf'] as const;
+
+export const ListInputSchema = z.strictObject({
+  id: IdSchema.nullable(),
+  name: requiredText(80, 'List name'),
+  description: nullableText(2_000),
+  color: z.enum(LIST_COLORS).nullable(),
+  icon: z.enum(LIST_ICONS).nullable(),
+});
+export type ListInput = z.infer<typeof ListInputSchema>;
+
+export const PickConstraintsSchema = z.strictObject({
+  types: z.array(MediaTypeSchema).max(4),
+  genres: z.array(requiredText(LIMITS.genre, 'Genre')).max(20),
+  tags: z.array(requiredText(LIMITS.tag, 'Tag')).max(20),
+  listIds: z.array(IdSchema).max(20),
+  onlyUpNext: z.boolean(),
+  includeInProgress: z.boolean(),
+  includeOnHold: z.boolean(),
+  availableMinutes: z.number().int().min(5).max(1_440).nullable(),
+  ratingFloor: RatingSchema,
+  excludeSkipped: z.boolean(),
+});
+
+export const PickRequestSchema = z.strictObject({
+  constraints: PickConstraintsSchema,
+  /** Ids not to repeat immediately (e.g. the previous pick). */
+  avoid: z.array(IdSchema).max(20),
+  /** Optional seed for reproducible picks (tests, "same again"). */
+  seed: z.number().int().min(0).max(4_294_967_295).nullable(),
+});
+export type PickRequest = z.infer<typeof PickRequestSchema>;
+
+export const PickRespondSchema = z.strictObject({
+  historyId: IdSchema,
+  outcome: z.enum(['started', 'skipped', 'queued']),
+});
+
+export const SnoozeSchema = z.strictObject({
+  ids: z.array(IdSchema).min(1).max(LIMITS.bulkIds),
+  until: IsoDateSchema,
+});
+
+export const GoalInputSchema = z
+  .strictObject({
+    id: IdSchema.nullable(),
+    title: requiredText(120, 'Goal name'),
+    mediaType: MediaTypeSchema.nullable(),
+    metric: z.enum(['items', 'pages', 'episodes', 'hours']),
+    period: z.enum(['year', 'month', 'custom']),
+    /** For year/month: any date inside the period. For custom: the start. */
+    startDate: IsoDateSchema,
+    /** Only for custom periods. */
+    endDate: IsoDateSchema.nullable(),
+    target: z.number().int().min(1).max(1_000_000),
+    listId: IdSchema.nullable(),
+    tag: nullableText(LIMITS.tag),
+  })
+  .superRefine((g, ctx) => {
+    if (g.period === 'custom' && !g.endDate)
+      ctx.addIssue({ code: 'custom', path: ['endDate'], message: 'Choose an end date for a custom period.' });
+    if (g.period === 'custom' && g.endDate && g.endDate < g.startDate)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endDate'],
+        message: 'The end date must be after the start date.',
+      });
+    if (g.metric === 'pages' && g.mediaType !== null && g.mediaType !== 'book')
+      ctx.addIssue({ code: 'custom', path: ['metric'], message: 'Pages can only be counted for books.' });
+    if (g.metric === 'episodes' && g.mediaType !== null && g.mediaType !== 'tv')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['metric'],
+        message: 'Episodes can only be counted for TV shows.',
+      });
+    if (g.metric === 'hours' && g.mediaType !== null && g.mediaType !== 'game')
+      ctx.addIssue({ code: 'custom', path: ['metric'], message: 'Hours can only be counted for games.' });
+  });
+export type GoalInput = z.infer<typeof GoalInputSchema>;
+
+/* ---- library sources ---- */
+
+export const SourceEntryFilterSchema = z.strictObject({
+  sourceId: IdSchema,
+  view: z.enum(['unplayed', 'played', 'all', 'inPile', 'ignored', 'new', 'removed']),
+  search: text(LIMITS.searchText),
+  showNonGames: z.boolean(),
+  sort: z.enum(['name', 'playtime', 'lastPlayed', 'appid']),
+  direction: z.enum(['asc', 'desc']),
+});
+export type SourceEntryFilter = z.infer<typeof SourceEntryFilterSchema>;
+
+export const SteamSourceInputSchema = z.strictObject({
+  sourceId: IdSchema.nullable(),
+  label: requiredText(120, 'Label'),
+  /** SteamID64, profile URL or vanity name; parsed and host-checked in main. */
+  account: requiredText(200, 'Steam account'),
+  /** New API key; empty string keeps the stored key. Never echoed back. */
+  apiKey: z.string().max(200).transform(cleanString),
+});
+
+export const SourceImportSchema = z.strictObject({
+  sourceId: IdSchema,
+  externalIds: z.array(z.string().min(1).max(200)).min(1).max(20_000),
+  status: StatusSchema,
+  tags: z.array(requiredText(LIMITS.tag, 'Tag')).max(20),
+  listId: IdSchema.nullable(),
+  importPlaytime: z.boolean(),
+  enrich: z.boolean(),
+});
+export type SourceImportInput = z.infer<typeof SourceImportSchema>;
+
+export const ManualListInputSchema = z.strictObject({
+  sourceId: IdSchema.nullable(),
+  label: requiredText(120, 'Label'),
+  /** Pasted text: one title per line, or CSV with a title column and optional platform column. */
+  text: z.string().max(5_000_000),
+});

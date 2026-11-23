@@ -8,7 +8,8 @@ import axe from 'axe-core';
 import { expect } from 'vitest';
 import { buildApi } from '../../src/shared/ipc-channels';
 import type { MaybePileApi } from '../../src/shared/ipc-contract';
-import { buildHandlers, type Platform } from '../../src/main/ipc/handlers';
+import { buildHandlers, decodeText, type Platform } from '../../src/main/ipc/handlers';
+import { createFeatureServices, type FeatureServices } from '../../src/main/services/feature-services';
 import { createDispatcher } from '../../src/main/ipc/register';
 import { ArtworkService, passthroughProcessor } from '../../src/main/services/artwork-service';
 import { BackupService } from '../../src/main/services/backup-service';
@@ -16,7 +17,6 @@ import { CatalogService } from '../../src/main/services/catalog-service';
 import { pathsFor, type ServiceContext } from '../../src/main/services/context';
 import { CustomizationService } from '../../src/main/services/customization-service';
 import { DatabaseManager } from '../../src/main/services/db-manager';
-import { ImportService } from '../../src/main/services/import-service';
 import { LibraryService } from '../../src/main/services/library-service';
 import { MemoryLogger } from '../../src/main/services/logger';
 import { ProgressService } from '../../src/main/services/progress-service';
@@ -30,6 +30,9 @@ import { FakeClock, createInput } from '../helpers/services';
 export interface UiEnv {
   library: LibraryService;
   progress: ProgressService;
+  features: FeatureServices;
+  http: FakeHttp;
+  secrets: SecretsService;
   platform: Platform & { opened: string[] };
   cleanup: () => void;
 }
@@ -52,6 +55,16 @@ export function installBridge(): UiEnv {
   const library = new LibraryService(ctx);
   const progress = new ProgressService(ctx, library);
   const artwork = new ArtworkService(ctx, passthroughProcessor, http);
+  const providers = new ProviderService(ctx, http, secrets, library, artwork, () => instantLimiter());
+  const features = createFeatureServices(ctx, {
+    library,
+    providers,
+    secrets,
+    http,
+    decodeText,
+    steamLimiter: instantLimiter(),
+    sleep: async () => undefined,
+  });
   const opened: string[] = [];
   const platform: UiEnv['platform'] = {
     opened,
@@ -67,9 +80,9 @@ export function installBridge(): UiEnv {
     progress,
     catalog: new CatalogService(ctx),
     custom: new CustomizationService(ctx),
-    providers: new ProviderService(ctx, http, secrets, library, artwork, () => instantLimiter()),
+    providers,
     artwork,
-    importer: new ImportService(ctx, library),
+    ...features,
     backup: new BackupService(ctx, dbm, artwork),
     secrets,
     platform,
@@ -108,6 +121,9 @@ export function installBridge(): UiEnv {
   return {
     library,
     progress,
+    features,
+    http,
+    secrets,
     platform,
     cleanup: () => {
       dbm.close();

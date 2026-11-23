@@ -56,3 +56,18 @@ Settings → Data & Behavior → **Open data folder** opens it. The diagnostic l
 - The portable build only uses `MaybePileData` next to the **exe you launched**. If you moved the exe, move the `MaybePileData` folder with it.
 - If the folder next to the exe was read-only (for example, a protected USB stick or `Program Files`), data was written to `%APPDATA%\MaybePile-Portable`; the app shows a notice when that happens.
 - The installed app (`%APPDATA%\MaybePile`) and the portable app never share data. To move between them, use a `.mpbackup` backup and restore.
+
+## Feature pack (1.2)
+
+| Problem | What to do |
+| --- | --- |
+| Steam import says game details are private | Steam → Profile → Edit Profile → Privacy Settings → set **My profile** and **Game details** to Public, wait a few minutes, then Sync again. See [steam-import.md](steam-import.md#troubleshooting). |
+| "Steam rejected the API key" | Get your key again at steamcommunity.com/dev/apikey and paste it in Settings → Providers → Steam. |
+| Steam sync is disabled | You're offline (the screen says so) or no key is saved. |
+| A game I own is missing from "Unplayed" | Steam recorded playtime for it (check *Played*), it's already in your pile (*Already in pile*), you ignored it (*Ignored*), or it looks like a non-game (tick *Show non-game items*). |
+| Undo didn't remove some imported items | Undo keeps anything you changed since the import. The confirmation lists them with the reason. |
+| "Up Next is full" | Remove something from Up Next, or raise the limit in Settings → Features (max 25). |
+| Global Quick Capture shortcut doesn't work | Another app may own it. Choose a different one in Settings → Features; Ctrl/⌘+Shift+N works inside the app regardless. |
+| No release notifications | They're off by default (Settings → Features → Release Radar), only fire for exact dates, and only while Maybe Pile is running. On Windows/macOS, also allow notifications for Maybe Pile in system settings. |
+| Goodreads/Letterboxd import refuses the file | Choose the file exactly as exported (Goodreads CSV; Letterboxd .zip or one of its CSVs). For other spreadsheets use **Custom CSV**. Files over 25 MB or 50,000 rows must be split. |
+| "Save as image" saved a blank or cropped chart | Scroll the chart fully into view and try again. Capture uses the visible window area. |

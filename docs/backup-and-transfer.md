@@ -12,12 +12,20 @@
 | Custom fields | ✅ | ✅ (by field name) | ❌ |
 | Series | ✅ | ✅ | ❌ |
 | Themes, layouts, settings (non-secret) | ✅ | ✅ | ❌ |
+| Up Next | ✅ | ✅ (`upNextPosition`) | ✅ (`up_next_position`) |
+| Lists and memberships | ✅ | ✅ | Names only (`lists`) |
+| Snoozes, goals, CSV mapping profiles | ✅ | ✅ | ❌ |
+| Library sources (Steam/manual snapshots, ignore flags) | ✅ | ✅ | ❌ |
+| Import batches (undo history) | ✅ | ✅ | ❌ |
+| Pick for Me history, release-notification log | ✅ | ❌ (local convenience data) | ❌ |
 | Artwork image files | ✅ | Reference only (hash or URL) | ❌ |
 | API keys | ❌ never | ❌ never | ❌ never |
 | Absolute paths, logs | ❌ | ❌ | ❌ |
 | Restore/import mode | **Replace** | **Merge** | **Merge** |
 
 ### `.mpbackup` (format `maybepile-backup`, `formatVersion` 1)
+
+The container format is unchanged in 1.2, so `formatVersion` stays 1 (bumping it would make 1.1 refuse backups for no container-level reason). The **database schema version** inside the manifest (now 4) tells an older app the backup is newer, and that app refuses it with "update the app". Restoring a v1–v3 backup migrates the staged copy to v4 first.
 
 A ZIP container with relative POSIX paths only:
 
@@ -28,21 +36,25 @@ library.sqlite        consistent snapshot via SQLite VACUUM INTO (soft-deleted i
 artwork/<sha256>.jpg|png and <sha256>.thumb.jpg
 ```
 
-### JSON export (format `maybepile-export`, `formatVersion` 1)
+### JSON export (format `maybepile-export`, `formatVersion` 2)
 
-`{ format, formatVersion, exportedAt, appVersion, schemaVersion, counts, data: { items, customFieldDefs, series, themes, layouts, settings } }`. The schema is defined in `src/main/services/portable-format.ts`.
+`{ format, formatVersion, exportedAt, appVersion, schemaVersion, counts, data: { items, customFieldDefs, series, themes, layouts, settings, lists, goals, snoozes, librarySources, importBatches, mappingProfiles } }`.
+
+- **formatVersion 2** (app 1.2) adds the last six sections. They are optional, so **version-1 files still import** unchanged. Files with a **higher** version are refused: "This export uses format version N; this app supports up to 2. Update Maybe Pile to import it."
+- Merging v2 data: lists merge **by name**; goals, library sources and import batches are added when their id is new; snoozes follow their (re-mapped) items; mapping profiles are added when the name is free. Nothing existing is overwritten.
+- The Steam API key is **never** included (it isn't in the database). The schema is defined in `src/main/services/portable-format.ts`.
 
 ### CSV export
 
-One row per item, UTF-8 (optional BOM for Excel, on by default) with RFC 4180 quoting and CRLF line endings. Columns: `id, type, title, alt_titles, status, rating_stars, date_added, date_started, date_completed, release_date, tags, genres, creators, imdb_id, tmdb_id, tvmaze_id, igdb_id, openlibrary_id, isbn13, isbn10, steam, xbox, playstation, runtime_minutes, network, show_status, page_count, publisher, book_format, platforms, game_progress_scheme, progress, progress_percent, notes`. List cells use `; ` as the separator. Creators look like `Name (Role)`.
+One row per item, UTF-8 (optional BOM for Excel, on by default) with RFC 4180 quoting and CRLF line endings. Columns: `id, type, title, alt_titles, status, rating_stars, date_added, date_started, date_completed, release_date, tags, genres, creators, imdb_id, tmdb_id, tvmaze_id, igdb_id, openlibrary_id, isbn13, isbn10, steam, xbox, playstation, runtime_minutes, network, show_status, page_count, publisher, book_format, platforms, game_progress_scheme, progress, progress_percent, notes, lists, up_next_position`. `lists` holds list names separated by `; ` (lists are created by name on import); `up_next_position` is 1-based. List cells use `; ` as the separator. Creators look like `Name (Role)`.
 
 - **Formula-injection defence:** any cell starting with `=`, `+`, `-`, `@`, TAB or CR is prefixed with `'` so spreadsheet apps treat it as text. CSV import strips exactly that prefix again.
-- **What CSV cannot represent:** episode lists and watched state, full progress history, viewing history, provenance, sources, audit log, custom fields, series, themes/layouts and artwork. `progress` and `progress_percent` are export-only and ignored on import.
+- **What CSV cannot represent:** episode lists and watched state, full progress history, viewing history, provenance, sources, audit log, custom fields, series, themes/layouts, artwork, **list order, list colours/icons/descriptions, snoozes, goals, library sources, import batches and mapping profiles**. Use JSON or a full backup for those. `progress` and `progress_percent` are export-only and ignored on import.
 - CSV import requires the `type` and `title` columns. Unknown columns are ignored with a warning. Every row is validated, errors are reported as "row N, column", and any error blocks the import (all-or-nothing).
 
 ## Restore and import semantics
 
-- **Preview first.** Nothing is applied until you confirm. The preview shows the file type and version, counts (your library vs the file), errors and warnings with row/path detail, and conflicts. Cancel at any point and nothing changes.
+- **Preview first.** Nothing is applied until you confirm. The preview shows the file type and version, counts (your library vs the file, including lists, Up Next entries, snoozes, goals, library sources and their entries, import batches and mapping profiles), errors and warnings with row/path detail, and conflicts. Cancel at any point and nothing changes.
 - **Merge (JSON/CSV):** new items are added. A conflict (same item ID, same provider ID, or same title + year + type) can be resolved globally or per item:
   - *Skip (keep mine)* (default).
   - *Keep both*: the imported copy gets a new ID.
@@ -59,7 +71,7 @@ One row per item, UTF-8 (optional BOM for Excel, on by default) with RFC 4180 qu
 1. On the old computer: **Settings → Backup & Restore → Create backup…**. Save the `.mpbackup` somewhere you can carry (USB drive, cloud folder, network share).
 2. Install Maybe Pile on the new computer (see platform notes below) and start it once.
 3. **Settings → Backup & Restore → Restore from backup…**, choose the file, review the preview, type `RESTORE`.
-4. Re-enter API keys in Settings → Providers. Keys are never included in backups.
+4. Re-enter API keys in Settings → Providers, including the Steam Web API key (Settings → Providers → Steam). Keys are never included in backups. Your Steam snapshot, ignore list and import history do come along.
 
 The format is OS-independent: paths inside the archive are relative with `/` separators, artwork file names are lowercase hashes (no case-sensitivity issues), the database stores no absolute paths, and timestamps are UTC while personal dates are plain calendar dates (no time-zone shifts).
 

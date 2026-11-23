@@ -36,10 +36,42 @@ import {
   StatusSchema,
   ViewingEditSchema,
   ViewingInputSchema,
+  GoalInputSchema,
+  ImportApplySchema as TrackerApplySchema,
+  ListInputSchema,
+  ManualListInputSchema,
+  PickRequestSchema,
+  PickRespondSchema,
+  SnoozeSchema,
+  SourceEntryFilterSchema,
+  SourceImportSchema,
+  SteamSourceInputSchema,
+  requiredText,
 } from './schemas';
+import { CsvMappingSchema } from '../domain/tracker-csv';
 import type { API_SHAPE, Channel, MenuCommand } from './ipc-channels';
 import type { Result } from './result';
 import type {
+  BatchImportResultView,
+  CommandTarget,
+  FetchJobView,
+  GoalView,
+  HealthOverview,
+  ImportBatchView,
+  LibrarySourceView,
+  ListDetailView,
+  ListSummaryView,
+  MappingProfileView,
+  PickHistoryView,
+  PickResultView,
+  RadarRefreshView,
+  SourceDiffView,
+  SourceEntriesPage,
+  StatsView,
+  TrackerPreviewView,
+  UndoPreviewView,
+  UpcomingItemView,
+  YearInReviewView,
   AppInfo,
   AuditEntryView,
   CustomFieldDefView,
@@ -89,6 +121,18 @@ const SuggestionSchema = z.strictObject({
     .nullable(),
 });
 
+const ExternalIdList = z.array(z.string().min(1).max(200)).min(1).max(20_000);
+const YearSchema = z.number().int().min(1900).max(2200);
+export const STATS_CHART_IDS = [
+  'completedByMonth',
+  'completedByYear',
+  'avgRatingByType',
+  'topGenres',
+  'topCreators',
+  'timeToComplete',
+  'episodesByMonth',
+] as const;
+
 const LayoutEntrySchema = z.strictObject({
   id: z.string().max(40),
   visible: z.boolean(),
@@ -126,6 +170,104 @@ export const REQUEST_SCHEMAS = {
     types: z.array(MediaTypeSchema).max(4),
     excludeId: IdSchema.nullable(),
   }),
+  'items:titles': none,
+  'items:quickCapture': z.strictObject({
+    title: requiredText(500, 'Title'),
+    type: MediaTypeSchema,
+    allowDuplicate: z.boolean(),
+  }),
+
+  'pick:roll': PickRequestSchema,
+  'pick:respond': PickRespondSchema,
+  'pick:history': none,
+  'pick:clearSkips': none,
+
+  'health:overview': none,
+  'health:snooze': SnoozeSchema,
+  'health:unsnooze': z.strictObject({ ids: z.array(IdSchema).min(1).max(10_000) }),
+  'health:keep': z.strictObject({ ids: z.array(IdSchema).min(1).max(10_000) }),
+
+  'lists:list': none,
+  'lists:get': byId,
+  'lists:save': ListInputSchema,
+  'lists:delete': byId,
+  'lists:move': z.strictObject({ id: IdSchema, direction: z.enum(['up', 'down']) }),
+  'lists:setMembership': z.strictObject({
+    listId: IdSchema,
+    itemIds: z.array(IdSchema).min(1).max(10_000),
+    member: z.boolean(),
+  }),
+  'lists:moveItem': z.strictObject({ listId: IdSchema, itemId: IdSchema, direction: z.enum(['up', 'down']) }),
+
+  'stats:get': z.strictObject({ year: YearSchema.nullable() }),
+  'stats:yearInReview': z.strictObject({ year: YearSchema }),
+  'stats:exportCsv': z.strictObject({ chart: z.enum(STATS_CHART_IDS), year: YearSchema.nullable() }),
+  'stats:saveImage': z.strictObject({
+    name: z.string().regex(/^[a-z0-9-]{1,40}$/),
+    rect: z.strictObject({
+      x: z.number().int().min(0).max(20_000),
+      y: z.number().int().min(0).max(20_000),
+      width: z.number().int().min(1).max(8_000),
+      height: z.number().int().min(1).max(8_000),
+    }),
+  }),
+
+  'radar:upcoming': none,
+  'radar:refreshPreview': none,
+  'radar:refreshApply': z.strictObject({
+    token: z.string().min(1).max(100),
+    choices: z.record(IdSchema, z.enum(['keep', 'update'])),
+  }),
+  'radar:exportIcs': none,
+
+  'sources:list': none,
+  'sources:saveSteam': SteamSourceInputSchema,
+  'sources:clearSteamKey': none,
+  'sources:delete': z.strictObject({ sourceId: IdSchema }),
+  'sources:testSteam': z.strictObject({ sourceId: IdSchema }),
+  'sources:startFetch': z.strictObject({ sourceId: IdSchema }),
+  'sources:fetchStatus': z.strictObject({ jobId: z.string().min(1).max(100) }),
+  'sources:cancelFetch': z.strictObject({ jobId: z.string().min(1).max(100) }),
+  'sources:entries': SourceEntryFilterSchema,
+  'sources:setIgnored': z.strictObject({
+    sourceId: IdSchema,
+    externalIds: ExternalIdList,
+    ignored: z.boolean(),
+  }),
+  'sources:import': SourceImportSchema,
+  'sources:diff': z.strictObject({ sourceId: IdSchema }),
+  'sources:applyPlaytime': z.strictObject({ sourceId: IdSchema, externalIds: ExternalIdList }),
+  'sources:loadManual': ManualListInputSchema,
+  'sources:loadManualFile': z.strictObject({
+    sourceId: IdSchema.nullable(),
+    label: requiredText(120, 'Label'),
+  }),
+
+  'batches:list': none,
+  'batches:undoPreview': z.strictObject({ batchId: IdSchema }),
+  'batches:undo': z.strictObject({ batchId: IdSchema }),
+
+  'tracker:preview': z.strictObject({
+    kind: z.enum(['goodreads', 'letterboxd', 'csv']),
+    profileId: IdSchema.nullable(),
+  }),
+  'tracker:remap': z.strictObject({
+    mapToken: IdSchema,
+    previousToken: z.string().max(100),
+    mapping: CsvMappingSchema,
+  }),
+  'tracker:apply': TrackerApplySchema,
+  'tracker:profiles': none,
+  'tracker:saveProfile': z.strictObject({
+    name: requiredText(80, 'Profile name'),
+    mapping: CsvMappingSchema,
+  }),
+  'tracker:deleteProfile': byId,
+
+  'goals:list': z.strictObject({ includeArchived: z.boolean() }),
+  'goals:save': GoalInputSchema,
+  'goals:archive': z.strictObject({ id: IdSchema, archived: z.boolean() }),
+  'goals:delete': byId,
 
   'progress:add': AddProgressSchema,
   'progress:edit': EditProgressSchema,
@@ -182,7 +324,7 @@ export const REQUEST_SCHEMAS = {
   'layouts:get': none,
   'layouts:set': z.strictObject({
     surface: z.enum(['dashboard', 'library']),
-    entries: z.array(LayoutEntrySchema).max(20),
+    entries: z.array(LayoutEntrySchema).max(40),
   }),
   'layouts:reset': z.strictObject({ surface: z.enum(['dashboard', 'library', 'both']) }),
   'layouts:import': none,
@@ -245,6 +387,59 @@ export interface ResponseTypes {
   'items:setUpNext': ItemDetail;
   'items:moveUpNext': DashboardData['upNext'];
   'items:pickRandom': ItemSummary | null;
+  'items:titles': CommandTarget[];
+  'items:quickCapture': CreateResultView;
+  'pick:roll': PickResultView;
+  'pick:respond': PickHistoryView[];
+  'pick:history': PickHistoryView[];
+  'pick:clearSkips': { cleared: number };
+  'health:overview': HealthOverview;
+  'health:snooze': HealthOverview;
+  'health:unsnooze': HealthOverview;
+  'health:keep': HealthOverview;
+  'lists:list': ListSummaryView[];
+  'lists:get': ListDetailView;
+  'lists:save': ListSummaryView[];
+  'lists:delete': ListSummaryView[];
+  'lists:move': ListSummaryView[];
+  'lists:setMembership': { changed: number; lists: ListSummaryView[] };
+  'lists:moveItem': ListDetailView;
+  'stats:get': StatsView;
+  'stats:yearInReview': YearInReviewView;
+  'stats:exportCsv': FileOpResult | null;
+  'stats:saveImage': FileOpResult | null;
+  'radar:upcoming': UpcomingItemView[];
+  'radar:refreshPreview': RadarRefreshView;
+  'radar:refreshApply': { updated: number };
+  'radar:exportIcs': (FileOpResult & { included: number; skipped: number }) | null;
+  'sources:list': LibrarySourceView[];
+  'sources:saveSteam': LibrarySourceView[];
+  'sources:clearSteamKey': LibrarySourceView[];
+  'sources:delete': LibrarySourceView[];
+  'sources:testSteam': { message: string };
+  'sources:startFetch': FetchJobView;
+  'sources:fetchStatus': FetchJobView;
+  'sources:cancelFetch': FetchJobView;
+  'sources:entries': SourceEntriesPage;
+  'sources:setIgnored': { changed: number };
+  'sources:import': BatchImportResultView;
+  'sources:diff': SourceDiffView;
+  'sources:applyPlaytime': { updated: number };
+  'sources:loadManual': LibrarySourceView[];
+  'sources:loadManualFile': LibrarySourceView[] | null;
+  'batches:list': ImportBatchView[];
+  'batches:undoPreview': UndoPreviewView;
+  'batches:undo': UndoPreviewView;
+  'tracker:preview': TrackerPreviewView | null;
+  'tracker:remap': TrackerPreviewView;
+  'tracker:apply': ImportResultView;
+  'tracker:profiles': MappingProfileView[];
+  'tracker:saveProfile': MappingProfileView[];
+  'tracker:deleteProfile': MappingProfileView[];
+  'goals:list': GoalView[];
+  'goals:save': GoalView[];
+  'goals:archive': GoalView[];
+  'goals:delete': GoalView[];
   'progress:add': MutationOutcome;
   'progress:edit': MutationOutcome;
   'progress:remove': MutationOutcome;

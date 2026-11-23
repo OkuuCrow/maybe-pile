@@ -10,13 +10,25 @@ export type Route =
   | { name: 'dashboard' }
   | { name: 'library' }
   | { name: 'item'; id: string }
-  | { name: 'settings'; tab: SettingsTab };
+  | { name: 'settings'; tab: SettingsTab }
+  | { name: 'pick' }
+  | { name: 'lists' }
+  | { name: 'list'; id: string }
+  | { name: 'stats' }
+  | { name: 'goals' }
+  | { name: 'health' }
+  | { name: 'upcoming' }
+  | { name: 'import'; tab: ImportTab };
+
+export const IMPORT_TABS = ['sources', 'trackers', 'history'] as const;
+export type ImportTab = (typeof IMPORT_TABS)[number];
 
 export const SETTINGS_TABS = [
   'appearance',
   'layout',
   'providers',
   'library',
+  'features',
   'backup',
   'data',
   'about',
@@ -27,6 +39,18 @@ export function parseHash(hash: string): Route {
   const h = hash.replace(/^#\/?/, '');
   const [a, b] = h.split('/');
   if (a === 'library') return { name: 'library' };
+  if (a === 'pick') return { name: 'pick' };
+  if (a === 'lists') return { name: 'lists' };
+  if (a === 'list' && b && /^[0-9a-f-]{36}$/i.test(b)) return { name: 'list', id: b };
+  if (a === 'stats') return { name: 'stats' };
+  if (a === 'goals') return { name: 'goals' };
+  if (a === 'health') return { name: 'health' };
+  if (a === 'upcoming') return { name: 'upcoming' };
+  if (a === 'import')
+    return {
+      name: 'import',
+      tab: (IMPORT_TABS as readonly string[]).includes(b ?? '') ? (b as ImportTab) : 'sources',
+    };
   if (a === 'item' && b && /^[0-9a-f-]{36}$/i.test(b)) return { name: 'item', id: b };
   if (a === 'settings')
     return {
@@ -46,6 +70,12 @@ export function routeToHash(r: Route): string {
       return `#/item/${r.id}`;
     case 'settings':
       return `#/settings/${r.tab}`;
+    case 'list':
+      return `#/list/${r.id}`;
+    case 'import':
+      return `#/import/${r.tab}`;
+    default:
+      return `#/${r.name}`;
   }
 }
 
@@ -67,6 +97,10 @@ interface AppCtx {
   closeAdd: () => void;
   shortcutsOpen: boolean;
   setShortcutsOpen: (v: boolean) => void;
+  paletteOpen: boolean;
+  setPaletteOpen: (v: boolean) => void;
+  captureOpen: boolean;
+  setCaptureOpen: (v: boolean) => void;
 }
 
 const Ctx = createContext<AppCtx | null>(null);
@@ -94,6 +128,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dataVersion, setDataVersion] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
   const [infoTick, setInfoTick] = useState(0);
   const [themeTick, setThemeTick] = useState(0);
 
@@ -164,8 +200,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       closeAdd: () => setAddOpen(false),
       shortcutsOpen,
       setShortcutsOpen,
+      paletteOpen,
+      setPaletteOpen,
+      captureOpen,
+      setCaptureOpen,
     }),
-    [route, navigate, settings, updateSettings, layouts, info, dataVersion, theme, addOpen, shortcutsOpen],
+    [
+      route,
+      navigate,
+      settings,
+      updateSettings,
+      layouts,
+      info,
+      dataVersion,
+      theme,
+      addOpen,
+      shortcutsOpen,
+      paletteOpen,
+      captureOpen,
+    ],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

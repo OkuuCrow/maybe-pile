@@ -27,6 +27,7 @@ import type {
   StatusSuggestion,
 } from '../../shared/types';
 import { localDate, weekStartUtc } from '../../domain/dates';
+import { addDays, addMonths } from '../../domain/calendar';
 import { externalIdError } from '../../domain/links';
 import { canonicalValue, FIELDS_BY_TYPE, isEmptyValue, pruneMetaForType } from '../../domain/metadata';
 import { isAutoApplicable, planStatusChange } from '../../domain/status-rules';
@@ -209,7 +210,18 @@ export class LibraryService {
   }
 
   query(q: LibraryQuery): LibraryPage {
-    return items.queryLibrary(this.db, q);
+    return items.queryLibrary(this.db, q, this.healthContext());
+  }
+
+  /** Cut-off dates for the Pile Health "stale" filter, from settings. */
+  healthContext(): items.HealthFilterContext {
+    const t = readSettings(this.db).settings.pileHealth;
+    const today = this.today();
+    return {
+      today,
+      plannedCutoff: addMonths(today, -t.plannedStaleMonths),
+      idleCutoff: addDays(today, -t.inProgressStaleDays),
+    };
   }
 
   /* ---------------------------------------------------------------- update */
@@ -508,11 +520,27 @@ export class LibraryService {
         } else if (input.action === 'addUpNext') {
           if (row.up_next_position !== null || row.status === 'completed' || row.status === 'dropped')
             continue;
-          db.run('UPDATE items SET up_next_position = ?, updated_at = ? WHERE id = ?', [
-            this.nextQueuePosition(),
-            now,
-            id,
-          ]);
+          if (!this.enqueue(id, now)) continue; // queue full
+        } else if (input.action === 'addToList') {
+          if (!db.get('SELECT 1 FROM lists WHERE id = ?', [input.listId]))
+            throw appError('NOT_FOUND', 'That list no longer exists.');
+          const pos =
+            (db.get<{ p: number | null }>('SELECT max(position) AS p FROM list_items WHERE list_id = ?', [
+              input.listId,
+            ])?.p ?? -1) + 1;
+          if (
+            db.run(
+              'INSERT INTO list_items (list_id, item_id, position, added_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
+              [input.listId, id, pos, now],
+            ).changes === 0
+          )
+            continue;
+        } else if (input.action === 'snooze') {
+          db.run(
+            `INSERT INTO item_snoozes (item_id, until, reason, created_at) VALUES (?, ?, 'pile-health', ?)
+             ON CONFLICT(item_id) DO UPDATE SET until = excluded.until, reason = excluded.reason, created_at = excluded.created_at`,
+            [id, input.until, now],
+          );
         } else if (input.action === 'addTag') {
           items.addTag(db, id, input.tag);
           items.touch(db, id, now);
@@ -629,42 +657,66 @@ export class LibraryService {
   /* ---------------------------------------------------------------- Up Next queue */
 
   /**
-   * "Up Next" is a short, user-ordered queue of what to start soon. Positions
-   * are compacted to 0..n-1 after every change. Completing or dropping an item
-   * takes it out of the queue automatically.
+   * "Up Next" is a short, user-ordered queue of what to start soon, stored in
+   * the `up_next` table with a UNIQUE position. Positions are compacted to
+   * 0..n-1 after every change. Completing or dropping an item takes it out of
+   * the queue automatically. The queue holds at most `settings.upNextMax`.
    */
   upNext(): (ItemSummary & { nextAction: string | null })[] {
     const db = this.db;
     return items
       .summariesWhere(
         db,
-        'i.up_next_position IS NOT NULL',
+        'EXISTS (SELECT 1 FROM up_next u WHERE u.item_id = i.id)',
         [],
-        'ORDER BY i.up_next_position ASC, i.id LIMIT 50',
+        'ORDER BY (SELECT u.position FROM up_next u WHERE u.item_id = i.id) ASC, i.id LIMIT 50',
       )
       .map((s) => ({ ...s, nextAction: items.computeProgress(db, s.id).nextAction }));
   }
 
+  upNextMax(): number {
+    return readSettings(this.db).settings.upNextMax;
+  }
+
+  /** Live (non-deleted) queue ids in order. */
+  private queueIds(): string[] {
+    return this.db
+      .all<{ item_id: string }>(
+        `SELECT u.item_id FROM up_next u JOIN items i ON i.id = u.item_id
+         WHERE i.deleted_at IS NULL ORDER BY u.position, u.item_id`,
+      )
+      .map((r) => r.item_id);
+  }
+
   private nextQueuePosition(): number {
-    const max = this.db.get<{ p: number | null }>(
-      'SELECT max(up_next_position) AS p FROM items WHERE deleted_at IS NULL',
-    )?.p;
-    return (max ?? -1) + 1;
+    return (this.db.get<{ p: number | null }>('SELECT max(position) AS p FROM up_next')?.p ?? -1) + 1;
   }
 
-  private compactQueue(): void {
-    const rows = this.db.all<{ id: string }>(
-      'SELECT id FROM items WHERE up_next_position IS NOT NULL ORDER BY up_next_position, id',
-    );
-    rows.forEach((r, i) => this.db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [i, r.id]));
+  /**
+   * Renumbers the queue 0..n-1 in its current order. Ascending reassignment
+   * never collides with the UNIQUE constraint (each row only moves down).
+   */
+  compactQueue(): void {
+    const rows = this.db.all<{ item_id: string }>('SELECT item_id FROM up_next ORDER BY position, item_id');
+    rows.forEach((r, i) => this.db.run('UPDATE up_next SET position = ? WHERE item_id = ?', [i, r.item_id]));
   }
 
-  private leaveQueueIfDone(id: string, status: Status): void {
+  /** Appends an item if there is room; returns false when the queue is full or it is already queued. */
+  enqueue(id: string, now: string): boolean {
+    const db = this.db;
+    if (db.get('SELECT 1 FROM up_next WHERE item_id = ?', [id])) return false;
+    if (this.queueIds().length >= this.upNextMax()) return false;
+    db.run('INSERT INTO up_next (item_id, position, added_at) VALUES (?, ?, ?)', [
+      id,
+      this.nextQueuePosition(),
+      now,
+    ]);
+    return true;
+  }
+
+  leaveQueueIfDone(id: string, status: Status): void {
     if (status !== 'completed' && status !== 'dropped') return;
-    const r = this.db.run(
-      'UPDATE items SET up_next_position = NULL WHERE id = ? AND up_next_position IS NOT NULL',
-      [id],
-    );
+    const r = this.db.run('DELETE FROM up_next WHERE item_id = ?', [id]);
     if (r.changes > 0) this.compactQueue();
   }
 
@@ -674,13 +726,14 @@ export class LibraryService {
     if (!row) throw appError('NOT_FOUND', 'That item no longer exists.');
     db.transaction(() => {
       if (queued && row.up_next_position === null) {
-        db.run('UPDATE items SET up_next_position = ?, updated_at = ? WHERE id = ?', [
-          this.nextQueuePosition(),
-          this.nowIso(),
-          id,
-        ]);
+        const max = this.upNextMax();
+        if (this.queueIds().length >= max)
+          throw appError('CONFLICT', `Up Next is full (${max} items).`, {
+            recovery: 'Remove something from Up Next first, or raise the limit in Settings → Library.',
+          });
+        this.enqueue(id, this.nowIso());
       } else if (!queued && row.up_next_position !== null) {
-        db.run('UPDATE items SET up_next_position = NULL, updated_at = ? WHERE id = ?', [this.nowIso(), id]);
+        db.run('DELETE FROM up_next WHERE item_id = ?', [id]);
       }
       this.compactQueue();
     });
@@ -692,26 +745,30 @@ export class LibraryService {
     db.transaction(() => {
       this.compactQueue();
       const ids = db
-        .all<{ id: string }>(
-          'SELECT id FROM items WHERE up_next_position IS NOT NULL ORDER BY up_next_position',
-        )
-        .map((r) => r.id);
+        .all<{ item_id: string }>('SELECT item_id FROM up_next ORDER BY position')
+        .map((r) => r.item_id);
       const i = ids.indexOf(id);
       if (i === -1) throw appError('NOT_FOUND', 'That item is not in Up Next.');
       const j = direction === 'up' ? i - 1 : i + 1;
       if (j < 0 || j >= ids.length) return;
-      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [j, id]);
-      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [i, ids[j] ?? '']);
+      // Swap through a free temporary slot so the UNIQUE(position) constraint always holds.
+      const tmp = ids.length;
+      db.run('UPDATE up_next SET position = ? WHERE item_id = ?', [tmp, id]);
+      db.run('UPDATE up_next SET position = ? WHERE item_id = ?', [i, ids[j] ?? '']);
+      db.run('UPDATE up_next SET position = ? WHERE item_id = ?', [j, id]);
     });
     return this.upNext();
   }
 
-  /* ---------------------------------------------------------------- pick for me */
+  /* ---------------------------------------------------------------- pick for me (legacy, uniform) */
 
-  /** A random Planned item not already in Up Next (optionally limited to some types), for "Pick something for me". */
+  /** A random Planned item not already in Up Next (optionally limited to some types). Kept for the simple widget API. */
   pickRandom(types: readonly MediaType[], excludeId: string | null): ItemSummary | null {
-    // Items already in Up Next are skipped: the user has already decided on those.
-    const where = [`i.status = 'planned'`, 'i.up_next_position IS NULL', 'i.id <> ?'];
+    const where = [
+      `i.status = 'planned'`,
+      'NOT EXISTS (SELECT 1 FROM up_next u WHERE u.item_id = i.id)',
+      'i.id <> ?',
+    ];
     const params: (string | number)[] = [excludeId ?? ''];
     if (types.length > 0) {
       where.push(`i.type IN (${types.map(() => '?').join(',')})`);

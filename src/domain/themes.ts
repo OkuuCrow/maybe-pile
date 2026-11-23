@@ -37,6 +37,22 @@ export const COLOR_TOKENS = [
 ] as const;
 export type ColorToken = (typeof COLOR_TOKENS)[number];
 
+/**
+ * State badge colors added in 1.2 ("Snoozed", "Ignored", "In pile", "New").
+ * Optional in theme files so older themes stay valid; missing values fall back
+ * to STATE_DEFAULTS for the theme's color scheme. Badges always carry text and
+ * an icon too, so color is never the only signal.
+ */
+export const STATE_TOKENS = ['snoozed', 'ignored', 'inPile', 'newItem'] as const;
+export type StateToken = (typeof STATE_TOKENS)[number];
+export type AnyColorToken = ColorToken | StateToken;
+export const ALL_COLOR_TOKENS: readonly AnyColorToken[] = [...COLOR_TOKENS, ...STATE_TOKENS];
+
+export const STATE_DEFAULTS: Record<'light' | 'dark', Record<StateToken, string>> = {
+  light: { snoozed: '#5B4B8A', ignored: '#57534B', inPile: '#276B2B', newItem: '#1F5FA6' },
+  dark: { snoozed: '#C4B5FD', ignored: '#ABA79F', inPile: '#7BD389', newItem: '#7DB9F0' },
+};
+
 export const RADIUS_OPTIONS = ['none', 'small', 'medium', 'large'] as const;
 export const DENSITY_OPTIONS = ['compact', 'comfortable'] as const;
 export const FONT_FAMILY_OPTIONS = ['system', 'humanist', 'serif', 'mono'] as const;
@@ -60,10 +76,13 @@ const RADIUS_PX: Record<(typeof RADIUS_OPTIONS)[number], string> = {
 
 const hexColor = z.string().regex(HEX_COLOR_RE, 'Colors must be hex values like #1A2B3C or #1A2B3CFF.');
 
-const colorsShape = Object.fromEntries(COLOR_TOKENS.map((k) => [k, hexColor])) as Record<
-  ColorToken,
-  typeof hexColor
->;
+const colorsShape = {
+  ...(Object.fromEntries(COLOR_TOKENS.map((k) => [k, hexColor])) as Record<ColorToken, typeof hexColor>),
+  ...(Object.fromEntries(STATE_TOKENS.map((k) => [k, hexColor.optional()])) as Record<
+    StateToken,
+    z.ZodOptional<typeof hexColor>
+  >),
+};
 
 export const ThemeTokensSchema = z.strictObject({
   colorScheme: z.enum(['light', 'dark']),
@@ -107,6 +126,7 @@ export const PILE_LIGHT: ThemeTokens = {
     success: '#1E6B30',
     warning: '#8A5300',
     danger: '#B42318',
+    ...STATE_DEFAULTS.light,
   },
   radius: 'medium',
   density: 'comfortable',
@@ -134,6 +154,7 @@ export const PILE_DARK: ThemeTokens = {
     success: '#7BD389',
     warning: '#F2C063',
     danger: '#FF8A80',
+    ...STATE_DEFAULTS.dark,
   },
   radius: 'medium',
   density: 'comfortable',
@@ -170,9 +191,24 @@ export const TOKEN_VARS: Record<ColorToken, string> = {
   danger: '--mp-danger',
 };
 
+export const STATE_TOKEN_VARS: Record<StateToken, string> = {
+  snoozed: '--mp-state-snoozed',
+  ignored: '--mp-state-ignored',
+  inPile: '--mp-state-in-pile',
+  newItem: '--mp-state-new',
+};
+
+/** A token's value, falling back to the scheme default for optional state tokens. */
+export function colorOf(t: ThemeTokens, k: AnyColorToken): string {
+  const v = t.colors[k as keyof ThemeTokens['colors']];
+  if (v) return v;
+  return STATE_DEFAULTS[t.colorScheme][k as StateToken];
+}
+
 /** Converts validated tokens to [property, value] pairs. Inputs must already be validated. */
 export function themeToCssVars(t: ThemeTokens): [string, string][] {
   const vars: [string, string][] = COLOR_TOKENS.map((k) => [TOKEN_VARS[k], t.colors[k]]);
+  for (const k of STATE_TOKENS) vars.push([STATE_TOKEN_VARS[k], colorOf(t, k)]);
   vars.push(['--mp-radius', RADIUS_PX[t.radius]]);
   vars.push(['--mp-space', t.density === 'compact' ? '6px' : '8px']);
   vars.push(['--mp-font-scale', String(t.fontScale)]);
@@ -188,7 +224,11 @@ export interface ContrastWarning {
 }
 
 /** Pairs checked against WCAG 2.2 AA (4.5:1 text, 3:1 UI components/focus indicators). */
-export const CONTRAST_PAIRS: { fg: ColorToken; bg: ColorToken; min: number; label: string }[] = [
+export const CONTRAST_PAIRS: { fg: AnyColorToken; bg: ColorToken; min: number; label: string }[] = [
+  { fg: 'snoozed', bg: 'surface', min: 4.5, label: 'Snoozed badge on surface' },
+  { fg: 'ignored', bg: 'surface', min: 4.5, label: 'Ignored badge on surface' },
+  { fg: 'inPile', bg: 'surface', min: 4.5, label: 'In-pile badge on surface' },
+  { fg: 'newItem', bg: 'surface', min: 4.5, label: 'New badge on surface' },
   { fg: 'text', bg: 'bg', min: 4.5, label: 'Text on background' },
   { fg: 'text', bg: 'surface', min: 4.5, label: 'Text on surface' },
   { fg: 'text', bg: 'surfaceAlt', min: 4.5, label: 'Text on alternate surface' },
@@ -212,7 +252,7 @@ export const CONTRAST_PAIRS: { fg: ColorToken; bg: ColorToken; min: number; labe
 export function contrastWarnings(t: ThemeTokens): ContrastWarning[] {
   const out: ContrastWarning[] = [];
   for (const p of CONTRAST_PAIRS) {
-    const ratio = contrastRatio(t.colors[p.fg], t.colors[p.bg], t.colors.bg);
+    const ratio = contrastRatio(colorOf(t, p.fg), t.colors[p.bg], t.colors.bg);
     if (ratio !== null && ratio < p.min) out.push({ pair: p.label, ratio, required: p.min });
   }
   return out;

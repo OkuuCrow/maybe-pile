@@ -24,6 +24,8 @@ import { DEFAULT_LAYOUTS } from '../../../domain/layouts';
 import { ratingToStars } from '../../../domain/rating';
 import { call, errorOf, getApi, useAsync } from '../../app/api';
 import { useApp } from '../../app/context';
+import { AddToListDialog } from '../lists/ListsPage';
+import { SnoozeDialog } from '../health/HealthPage';
 import { S, fmtPartialDate, statusLabel, typeLabel, typeLabelPlural } from '../../app/strings';
 import { useToast } from '../../app/toast';
 import { isTypingTarget } from '../../app/shortcuts';
@@ -58,8 +60,17 @@ function readHint(): Partial<LibraryQuery> | null {
     const raw = sessionStorage.getItem('mp-library-hint');
     sessionStorage.removeItem('mp-library-hint');
     if (!raw) return null;
-    const h = JSON.parse(raw) as { types?: unknown; tags?: unknown };
+    const h = JSON.parse(raw) as {
+      types?: unknown;
+      tags?: unknown;
+      upNextOnly?: unknown;
+      listId?: unknown;
+      health?: unknown;
+    };
     const out: Partial<LibraryQuery> = {};
+    if (h.upNextOnly === true) out.upNextOnly = true;
+    if (typeof h.listId === 'string' && /^[0-9a-f-]{36}$/i.test(h.listId)) out.listId = h.listId;
+    if (h.health === 'stale' || h.health === 'snoozed') out.health = h.health;
     if (Array.isArray(h.types))
       out.types = h.types.filter((t): t is MediaType => (MEDIA_TYPES as readonly unknown[]).includes(t));
     if (Array.isArray(h.tags))
@@ -89,6 +100,7 @@ export function Library() {
   const view = app.settings?.libraryView ?? 'grid';
   const layout = app.layouts?.library ?? DEFAULT_LAYOUTS.library;
   const tags = useAsync(() => call(getApi().items.tags()), [app.dataVersion]);
+  const lists = useAsync(() => call(getApi().lists.list()), [app.dataVersion]);
   const seq = useRef(0);
 
   // Debounced search text → query.
@@ -151,6 +163,9 @@ export function Library() {
     (query.ratingMax !== null ? 1 : 0) +
     (query.addedFrom ? 1 : 0) +
     (query.addedTo ? 1 : 0) +
+    (query.listId ? 1 : 0) +
+    (query.upNextOnly ? 1 : 0) +
+    (query.health ? 1 : 0) +
     (query.text ? 1 : 0);
 
   const toggleSelect = (id: string) =>
@@ -181,7 +196,9 @@ export function Library() {
         />
       </div>
     ),
-    filters: <FilterBar key="filters" query={query} patch={patch} tags={tags.data ?? []} />,
+    filters: (
+      <FilterBar key="filters" lists={lists.data ?? []} query={query} patch={patch} tags={tags.data ?? []} />
+    ),
     sort: (
       <div className="toolbar-block row" key="sort">
         <label htmlFor="sort-field">{S.library.sort}</label>
@@ -255,7 +272,13 @@ export function Library() {
       </div>
       <div className="library-toolbar">{layout.filter((c) => c.visible).map((c) => blocks[c.id])}</div>
       {activeFilterCount > 0 && (
-        <ActiveChips query={query} patch={patch} clearText={() => setTextDraft('')} reset={reset} />
+        <ActiveChips
+          lists={lists.data ?? []}
+          query={query}
+          patch={patch}
+          clearText={() => setTextDraft('')}
+          reset={reset}
+        />
       )}
       {error && <ErrorBox error={error} onRetry={() => void load(0)} />}
       {!error &&
@@ -343,10 +366,12 @@ function CheckGroup<T extends string>({
 }
 
 function FilterBar({
+  lists,
   query,
   patch,
   tags,
 }: {
+  lists: { id: string; name: string }[];
   query: LibraryQuery;
   patch: (p: Partial<LibraryQuery>) => void;
   tags: TagCount[];
@@ -473,17 +498,57 @@ function FilterBar({
             />
           </div>
         </fieldset>
+        <fieldset className="check-group">
+          <legend>Collections</legend>
+          <div className="row wrap">
+            <label htmlFor={`${id}-list`}>List</label>
+            <select
+              id={`${id}-list`}
+              className="input input-inline"
+              value={query.listId ?? ''}
+              onChange={(e) => patch({ listId: e.target.value || null })}
+            >
+              <option value="">Any</option>
+              {lists.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <label className="check-inline">
+              <input
+                type="checkbox"
+                checked={query.upNextOnly}
+                onChange={(e) => patch({ upNextOnly: e.target.checked })}
+              />{' '}
+              Only Up Next
+            </label>
+            <label htmlFor={`${id}-health`}>Pile Health</label>
+            <select
+              id={`${id}-health`}
+              className="input input-inline"
+              value={query.health ?? ''}
+              onChange={(e) => patch({ health: (e.target.value || null) as LibraryQuery['health'] })}
+            >
+              <option value="">Any</option>
+              <option value="stale">Stale (needs a look)</option>
+              <option value="snoozed">Snoozed</option>
+            </select>
+          </div>
+        </fieldset>
       </div>
     </div>
   );
 }
 
 function ActiveChips({
+  lists,
   query,
   patch,
   clearText,
   reset,
 }: {
+  lists: { id: string; name: string }[];
   query: LibraryQuery;
   patch: (p: Partial<LibraryQuery>) => void;
   clearText: () => void;
@@ -537,6 +602,20 @@ function ActiveChips({
       key: 'at',
       label: `Added until ${fmtPartialDate(query.addedTo)}`,
       remove: () => patch({ addedTo: null }),
+    });
+  if (query.listId)
+    chips.push({
+      key: 'list',
+      label: `List: ${lists.find((l) => l.id === query.listId)?.name ?? '…'}`,
+      remove: () => patch({ listId: null }),
+    });
+  if (query.upNextOnly)
+    chips.push({ key: 'up', label: 'Only Up Next', remove: () => patch({ upNextOnly: false }) });
+  if (query.health)
+    chips.push({
+      key: 'health',
+      label: query.health === 'stale' ? 'Stale (Pile Health)' : 'Snoozed',
+      remove: () => patch({ health: null }),
     });
   return (
     <div className="active-filters">
@@ -606,6 +685,8 @@ function BulkBar({
   const [tag, setTag] = useState('');
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
   const id = useId();
   const ids = [...selected];
   const run = async (fn: () => Promise<unknown>, msg: string) => {
@@ -720,6 +801,22 @@ function BulkBar({
           </button>
           <button
             type="button"
+            className="button button-small"
+            disabled={busy}
+            onClick={() => setListOpen(true)}
+          >
+            Add to list…
+          </button>
+          <button
+            type="button"
+            className="button button-small"
+            disabled={busy}
+            onClick={() => setSnoozeOpen(true)}
+          >
+            Snooze…
+          </button>
+          <button
+            type="button"
             className="button button-small button-danger"
             disabled={busy}
             onClick={() => setConfirm(true)}
@@ -727,6 +824,21 @@ function BulkBar({
             Delete…
           </button>
         </>
+      )}
+      {listOpen && <AddToListDialog itemIds={ids} onClose={() => setListOpen(false)} onDone={onDone} />}
+      {snoozeOpen && (
+        <SnoozeDialog
+          count={ids.length}
+          title={null}
+          onCancel={() => setSnoozeOpen(false)}
+          onSnooze={(until) => {
+            setSnoozeOpen(false);
+            void run(
+              () => call(getApi().items.bulk({ action: 'snooze', ids, until })),
+              `Snoozed ${ids.length} item(s) until ${fmtPartialDate(until)}.`,
+            );
+          }}
+        />
       )}
       {confirm && (
         <ConfirmDialog

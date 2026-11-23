@@ -7,7 +7,13 @@ import { useApp } from '../../app/context';
 import { S, fmtPartialDate, statusLabel, typeLabelPlural } from '../../app/strings';
 import { Cover, EmptyState, ErrorBox, Loading, ProgressBar, StatusBadge } from '../../components/Bits';
 import { TypeIcon } from '../../components/Icons';
-import { PickWidget, UpNextWidget, YearStatsWidget } from './Widgets';
+import { UpNextWidget, YearStatsWidget } from './Widgets';
+import { PickPanel } from '../pick/PickPage';
+import { HealthWidget } from '../health/HealthPage';
+import { GoalsWidget } from '../goals/GoalsPage';
+import { UpcomingWidget } from '../radar/UpcomingPage';
+import { ListsWidget } from '../lists/ListsPage';
+import { StatsSummaryWidget } from '../stats/StatsPage';
 
 export function Dashboard() {
   const app = useApp();
@@ -144,7 +150,29 @@ function renderWidget(id: string, d: DashboardData): ReactNode {
     case 'upNext':
       return <UpNextWidget items={d.upNext} />;
     case 'pick':
-      return <PickWidget plannedCount={d.countsByStatus.planned} />;
+      return (
+        <>
+          <h2 id="dash-pick">Pick for Me</h2>
+          {d.countsByStatus.planned + d.countsByStatus.in_progress + d.countsByStatus.on_hold === 0 ? (
+            <p className="muted">Nothing on the pile yet. Add a few things and come back.</p>
+          ) : (
+            <>
+              <PickPanel compact />
+              <a href="#/pick">More options</a>
+            </>
+          )}
+        </>
+      );
+    case 'pileHealth':
+      return <HealthWidget headingId="dash-pileHealth" />;
+    case 'upcoming':
+      return <UpcomingWidget headingId="dash-upcoming" />;
+    case 'goals':
+      return <GoalsWidget headingId="dash-goals" />;
+    case 'lists':
+      return <ListsWidget headingId="dash-lists" />;
+    case 'statsSummary':
+      return <StatsSummaryWidget headingId="dash-statsSummary" />;
     case 'yearStats':
       return <YearStatsWidget s={d.yearStats} />;
     case 'tags':

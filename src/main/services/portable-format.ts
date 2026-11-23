@@ -1,5 +1,11 @@
 /**
- * JSON export/import envelope ("maybepile-export", formatVersion 1).
+ * JSON export/import envelope ("maybepile-export").
+ *
+ * formatVersion history:
+ *   1 — app 1.0/1.1: items, custom fields, series, themes, layouts, settings.
+ *   2 — app 1.2: adds lists, goals, snoozes, library sources (snapshots and
+ *       ignore flags), import batches and CSV mapping profiles. All new
+ *       sections are optional so version-1 files still import unchanged.
  * The schema here is the single source of truth for what an export contains;
  * imports are validated against it before anything is written.
  */
@@ -19,10 +25,11 @@ import {
   PersonalFieldsSchema,
 } from '../../shared/schemas';
 import { ThemeTokensSchema } from '../../domain/themes';
+import { LIST_COLORS, LIST_ICONS } from '../../shared/schemas';
 import { LayoutFileSchema } from '../../domain/layouts';
 
 export const EXPORT_FORMAT = 'maybepile-export';
-export const EXPORT_FORMAT_VERSION = 1;
+export const EXPORT_FORMAT_VERSION = 2;
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
 export const MAX_IMPORT_ITEMS = 100_000;
 
@@ -178,6 +185,115 @@ export const ExportEnvelopeSchema = z.object({
       .max(200),
     layouts: LayoutFileSchema.nullable(),
     settings: z.record(z.string(), z.unknown()),
+    /* ---- formatVersion 2 ---- */
+    lists: z
+      .array(
+        z.object({
+          id: IdSchema,
+          name: z.string().min(1).max(80),
+          description: z.string().max(2_000).nullable(),
+          color: z.enum(LIST_COLORS).nullable(),
+          icon: z.enum(LIST_ICONS).nullable(),
+          position: z.number().int().min(0),
+          items: z.array(z.object({ itemId: IdSchema, position: z.number().int().min(0) })).max(100_000),
+        }),
+      )
+      .max(5_000)
+      .optional(),
+    goals: z
+      .array(
+        z.object({
+          id: IdSchema,
+          title: z.string().min(1).max(120),
+          mediaType: z.enum(MEDIA_TYPES).nullable(),
+          metric: z.enum(['items', 'pages', 'episodes', 'hours']),
+          period: z.enum(['year', 'month', 'custom']),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          target: z.number().int().min(1).max(1_000_000),
+          listId: IdSchema.nullable(),
+          tag: z.string().max(64).nullable(),
+          archivedAt: ts.nullable(),
+          createdAt: ts,
+        }),
+      )
+      .max(5_000)
+      .optional(),
+    snoozes: z
+      .array(
+        z.object({
+          itemId: IdSchema,
+          until: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          reason: z.enum(['manual', 'pile-health', 'keep']),
+          createdAt: ts,
+        }),
+      )
+      .max(MAX_IMPORT_ITEMS)
+      .optional(),
+    librarySources: z
+      .array(
+        z.object({
+          id: IdSchema,
+          kind: z.enum(['steam', 'manual']),
+          label: z.string().min(1).max(120),
+          accountRef: z
+            .string()
+            .regex(/^\d{1,20}$/)
+            .nullable(),
+          accountInput: z.string().max(200).nullable(),
+          lastSyncedAt: ts.nullable(),
+          lastSyncStatus: z.enum(['ok', 'private', 'error', 'cancelled', 'empty']).nullable(),
+          createdAt: ts,
+          entries: z
+            .array(
+              z.object({
+                externalId: z.string().min(1).max(200),
+                name: z.string().max(500),
+                platform: z.string().max(80).nullable(),
+                playtimeMinutes: z.number().int().min(0).nullable(),
+                prevPlaytimeMinutes: z.number().int().min(0).nullable(),
+                lastPlayedAt: ts.nullable(),
+                nonGameReason: z.string().max(80).nullable(),
+                firstSeenAt: ts,
+                seenAt: ts,
+                removedAt: ts.nullable(),
+                ignored: z.boolean(),
+                itemId: IdSchema.nullable(),
+              }),
+            )
+            .max(100_000),
+        }),
+      )
+      .max(100)
+      .optional(),
+    importBatches: z
+      .array(
+        z.object({
+          id: IdSchema,
+          kind: z.enum(['steam', 'manual-list', 'goodreads', 'letterboxd', 'csv-mapped']),
+          sourceId: IdSchema.nullable(),
+          label: z.string().max(200),
+          createdAt: ts,
+          undoneAt: ts.nullable(),
+          items: z
+            .array(
+              z.object({
+                itemId: IdSchema,
+                title: z.string().max(500),
+                /** "<updated_at>|<content fingerprint>" (older files: timestamp only). */
+                baselineUpdatedAt: z.string().max(100),
+                baselineEvents: z.number().int().min(0),
+              }),
+            )
+            .max(100_000),
+        }),
+      )
+      .max(10_000)
+      .optional(),
+    mappingProfiles: z
+      .array(z.object({ name: z.string().min(1).max(80), mapping: z.unknown() }))
+      .max(500)
+      .optional(),
   }),
 });
 export type ExportEnvelope = z.infer<typeof ExportEnvelopeSchema>;
@@ -217,5 +333,7 @@ export const CSV_COLUMNS = [
   'progress',
   'progress_percent',
   'notes',
+  'lists',
+  'up_next_position',
 ] as const;
 export type CsvColumn = (typeof CSV_COLUMNS)[number];

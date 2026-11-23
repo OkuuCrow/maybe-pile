@@ -8,10 +8,12 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
   net,
+  Notification,
   protocol,
   safeStorage,
   session,
@@ -27,7 +29,10 @@ import { writeSettings } from '../db/repositories/config-repo';
 import { createFetchClient, type HttpClient } from '../providers/http';
 import { ARTWORK_HOSTS } from '../providers/registry';
 import { checkExternalUrl } from '../domain/links';
-import { buildHandlers, type Platform } from './ipc/handlers';
+import { buildHandlers, decodeText, type Platform } from './ipc/handlers';
+import { QuickCaptureShortcut } from './quick-capture';
+import { startReleaseNotifier } from './release-notifier';
+import { createFeatureServices } from './services/feature-services';
 import { createDispatcher, makeTrustCheck } from './ipc/register';
 import { resolveDataLocation } from './portable';
 import {
@@ -49,7 +54,6 @@ import { CatalogService } from './services/catalog-service';
 import { pathsFor, systemClock, type ServiceContext } from './services/context';
 import { CustomizationService } from './services/customization-service';
 import { DatabaseManager } from './services/db-manager';
-import { ImportService } from './services/import-service';
 import { LibraryService } from './services/library-service';
 import { FileLogger } from './services/logger';
 import { ProgressService } from './services/progress-service';
@@ -158,6 +162,11 @@ const platform: Platform = {
     if (!c.ok) throw new AppError({ code: 'FORBIDDEN', message: c.reason });
     await shell.openExternal(c.url, { activate: true });
   },
+  async capturePng(rect) {
+    if (!mainWindow) return null;
+    const img = await mainWindow.webContents.capturePage(rect);
+    return img.isEmpty() ? null : new Uint8Array(img.toPNG());
+  },
 };
 
 /* ------------------------------------------------------------------ remote artwork proxy */
@@ -265,6 +274,7 @@ async function start(): Promise<void> {
   const providers = new ProviderService(ctx, httpClient, secrets, library, artwork);
   const backup = new BackupService(ctx, db, artwork);
   const custom = new CustomizationService(ctx);
+  const features = createFeatureServices(ctx, { library, providers, secrets, http: httpClient, decodeText });
 
   // Startup housekeeping: purge soft-deleted items, orphaned artwork, interrupted restores.
   if (!readOnly) {
@@ -272,6 +282,8 @@ async function start(): Promise<void> {
       library.purgeDeleted();
       artwork.gc();
       backup.cleanupStaging();
+      features.health.purgeExpired();
+      features.batches.purgeExpired();
     } catch (e) {
       log.warn('startup.housekeepingFailed', { error: e });
     }
@@ -332,10 +344,13 @@ async function start(): Promise<void> {
     custom,
     providers,
     artwork,
-    importer: new ImportService(ctx, library),
     backup,
     secrets,
     platform,
+    ...features,
+    onSettingsChanged: (s) => {
+      quickCapture.apply(s.quickCapture);
+    },
     appInfo,
     acknowledgeNotices: () => {
       upgradeNotice = null;
@@ -365,7 +380,49 @@ async function start(): Promise<void> {
   registerProtocols(artwork, providers.previewThumbs);
   buildMenu();
   createWindow();
+
+  // Opt-in global Quick Capture shortcut (failure-tolerant if another app owns it).
+  quickCapture = new QuickCaptureShortcut(globalShortcut, () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    sendMenu('quick-capture');
+  });
+  const startSettings = custom.getSettings();
+  if (!readOnly) {
+    const qs = quickCapture.apply(startSettings.quickCapture);
+    if (qs.message) log.warn('quickCapture.registerFailed');
+    // Opt-in local release notifications, only while the app is running.
+    startReleaseNotifier({
+      due: () => {
+        try {
+          return features.radar.dueNotifications();
+        } catch (e) {
+          log.warn('radar.notifyFailed', { error: e });
+          return [];
+        }
+      },
+      notify: (n) => new Notification({ title: n.title, body: n.body, silent: false }).show(),
+      isSupported: () => Notification.isSupported(),
+      setInterval: (fn, ms) => setInterval(fn, ms),
+      clearInterval: (h) => clearInterval(h as NodeJS.Timeout),
+    });
+    // Opt-in: look for release-date changes shortly after start (diff is shown later; nothing is applied).
+    if (startSettings.releaseRadar.refreshOnStart) {
+      setTimeout(() => {
+        void features.radar
+          .refreshPreview()
+          .catch((e: unknown) => log.warn('radar.startupRefreshFailed', { error: e }));
+      }, 15_000);
+    }
+  }
 }
+
+let quickCapture: QuickCaptureShortcut = new QuickCaptureShortcut(
+  { register: () => false, unregister: () => undefined, isRegistered: () => false },
+  () => undefined,
+);
 
 function hardenSession(): void {
   const s = session.defaultSession;
@@ -435,6 +492,7 @@ function buildMenu(): void {
       label: '&File',
       submenu: [
         { label: 'New Item…', accelerator: 'CmdOrCtrl+N', click: () => sendMenu('new-item') },
+        { label: 'Quick Capture…', accelerator: 'CmdOrCtrl+Shift+N', click: () => sendMenu('quick-capture') },
         { type: 'separator' },
         { label: 'Import…', click: () => sendMenu('import') },
         { label: 'Export…', click: () => sendMenu('export') },
@@ -451,6 +509,8 @@ function buildMenu(): void {
         { label: 'Library', accelerator: 'CmdOrCtrl+2', click: () => sendMenu('go-library') },
         { label: 'Settings', accelerator: 'CmdOrCtrl+,', click: () => sendMenu('go-settings') },
         { label: 'Find in Library', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('focus-search') },
+        { label: 'Command Palette…', accelerator: 'CmdOrCtrl+K', click: () => sendMenu('command-palette') },
+        { label: 'Pick for Me…', accelerator: 'CmdOrCtrl+Shift+P', click: () => sendMenu('pick-for-me') },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },
@@ -550,6 +610,8 @@ app.on('window-all-closed', () => {
 
 app.on('will-quit', () => {
   try {
+    quickCapture.dispose();
+    globalShortcut.unregisterAll();
     dbm?.close();
     rmSync(runningMarker, { force: true });
     log.info('app.quit');

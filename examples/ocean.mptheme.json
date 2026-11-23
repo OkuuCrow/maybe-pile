@@ -21,7 +21,11 @@
       "dropped": "#B02A1E",
       "success": "#1F6B33",
       "warning": "#8A5300",
-      "danger": "#B02A1E"
+      "danger": "#B02A1E",
+      "snoozed": "#5B4B8A",
+      "ignored": "#45606C",
+      "inPile": "#1F6B33",
+      "newItem": "#0B5F86"
     },
     "radius": "large",
     "density": "comfortable",

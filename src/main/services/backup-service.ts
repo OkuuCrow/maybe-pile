@@ -43,7 +43,7 @@ import { ARTWORK_FILE_RE } from './artwork-service';
 import type { ServiceContext } from './context';
 import type { DatabaseManager } from './db-manager';
 import { pruneFiles, timestampForFile } from './db-manager';
-import { libraryCounts } from './export-service';
+import { emptyCounts, libraryCounts } from './export-service';
 import { atomicWrite, ensureFreeSpace, mapFsError } from './fs-safe';
 
 export const BACKUP_FORMAT = 'maybepile-backup';
@@ -202,16 +202,7 @@ export class BackupService {
         fileLabel,
         formatVersion: '—',
         mode: 'replace',
-        incoming: {
-          items: { movie: 0, tv: 0, game: 0, book: 0 },
-          episodes: 0,
-          progressEntries: 0,
-          viewings: 0,
-          tags: 0,
-          themes: 0,
-          layouts: 0,
-          artwork: 0,
-        },
+        incoming: emptyCounts(),
         current,
         messages: [...messages, { severity: 'error', path, message }],
         conflicts: [],

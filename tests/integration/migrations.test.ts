@@ -126,7 +126,7 @@ describe('migrations', () => {
     expect(() =>
       db.run("INSERT INTO external_ids (item_id, kind, value) VALUES (?, 'wikidata', 'Q1')", [id]),
     ).toThrow(/CHECK/);
-    migrate(db);
+    migrate(db, { migrations: MIGRATIONS.slice(0, 3) });
     expect(db.all('SELECT kind, value FROM external_ids')).toEqual([{ kind: 'imdb', value: 'tt0113277' }]);
     db.run("INSERT INTO external_ids (item_id, kind, value) VALUES (?, 'wikidata', 'Q1')", [id]);
     expect(

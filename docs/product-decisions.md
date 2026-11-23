@@ -52,7 +52,7 @@ Ratings are stored as an integer **1–10** and shown as **0.5–5 stars in half
 
 Likely duplicates are found when adding or importing: **same type**, plus either the same provider/ISBN/Steam ID, or the same normalized title (accent- and case-folded, punctuation removed, leading "The/A/An" dropped) with a compatible year (equal, or either unknown). You choose *Open existing*, *Add anyway* or *Cancel*.
 
-## Up Next, Pick for me, This year (added in 1.1)
+## Up Next, Pick for me, This year (added in 1.1; superseded in part by 1.2 below)
 
 - **Up Next** is a short queue you order yourself (positions 1..n). Add from an item's page, from the Library bulk bar, or from a pick. Reorder or remove from the dashboard widget with buttons; keyboard focus stays on the moved item. Items leave the queue automatically when marked **Completed** or **Dropped**; other status changes keep them. Bulk add skips completed, dropped and already-queued items. The queue is included in backups and JSON exports.
 - **Pick something for me** chooses uniformly at random among **Planned** items that aren't already in Up Next, optionally limited to one media type. *Pick again* never repeats the previous pick immediately (when there is another option). Picking changes nothing until you choose *Add to Up Next* or open the item.
@@ -88,3 +88,64 @@ See [backup-and-transfer.md](backup-and-transfer.md#portable-windows-build): `Ma
 - **Auto-update:** not implemented, because it requires a hosted release feed. To add one, configure electron-builder `publish` (for example GitHub Releases) and `electron-updater`, and sign builds; updates must be opt-in to keep the "no unexpected network calls" promise.
 - **Opening `.mpbackup` by double-click:** the file association is registered, but the app doesn't auto-start a restore from the launch argument. Choose Restore in Settings. This was deliberate: a restore should always start from an explicit action inside the app.
 - **Drag-and-drop layout editing:** the list editor with Move up/down buttons is the accessible primary method.
+
+## Feature pack (1.2)
+
+### Steam library import
+
+- **Auth model:** the user's own Steam Web API key, entered in Settings and stored with `safeStorage` like other provider keys. No key is embedded or shipped (Valve's terms make keys personal). One key is shared by all Steam accounts you add.
+- **Documented API only:** `ResolveVanityURL` + `GetOwnedGames`. No store `appdetails` (not documented by Valve), no icon URLs (format not documented), no scraping. See [providers.md](providers.md#library-sources-12).
+- **"Unplayed"** = Steam reports `playtime_forever == 0`, the game isn't already in the pile (same Steam app id), and it isn't ignored. The UI explains that 0 minutes means "Steam recorded none", not "definitely never played".
+- **Non-games** are recognized by name (soundtrack, dedicated server, SDK/tool, demo, playtest, benchmark…), because `GetOwnedGames` has no app type. They're hidden by default with a visible reason and a toggle.
+- **Duplicates:** Steam app id is authoritative (skipped, never duplicated). The same normalized title is only a "Possible duplicate" warning.
+- **Private profiles:** a `200` response with neither `games` nor `game_count` is treated as private game details. `game_count: 0` is an empty library.
+- **Retries:** 429 waits for `Retry-After` up to 60 s (max 3 retries); 5xx/timeouts back off 2/4/8 s; anything longer stops with a message. Client limit: 10 requests / 10 s.
+- **Import chunks:** 200 games per transaction. A failed chunk is rolled back completely and listed; earlier chunks stay and remain undoable.
+- **Playtime as progress:** off by default. When on, games with playtime switch to the *hours* scheme and get one entry dated with Steam's last-played time.
+- **Re-sync never changes the pile.** Playtime updates are opt-in per game and default to "Keep mine". Games that leave the Steam library are flagged "Not in Steam anymore" and never deleted.
+- **Enrichment** (optional): exact normalized-title match only, fills empty fields only, at most 25 games per import, using IGDB if configured, else Wikidata.
+- **Manual game list** as the second `LibrarySource`: plain lines or CSV/TSV with a `title` column and optional `platform`. It uses the same review/import/undo flow.
+
+### Undo rules (all imports)
+
+An import can be undone for **30 days** (configurable 1–365). Undo removes only items whose **content fingerprint** (metadata, personal fields, tags, genres, creators, ids, custom fields, game/book details, `updated_at`) and **history count** (progress entries + viewings) are unchanged since the import. Adding an item to a list or Up Next doesn't count as editing it. Removed items are soft-deleted (purged at next start, like any delete). Kept items are listed with the reason. After the retention period, the batch record is purged; items are never touched.
+
+### Pick for Me
+
+Weighted random, never zero weight, seedable (see [features/pick-for-me.md](features/pick-for-me.md)). Defaults: neutral, In Progress and On Hold excluded, "Not now" = 7 days. Time fit: movies runtime ≤ time + 20 min, TV episode runtime ≤ time, games/books only with session tags or `short`. Unknown runtimes don't fit.
+
+### Pile Health
+
+Stale = Planned ≥ 12 months, or In Progress with no activity for ≥ 60 days. "Keep" silences nudges for one threshold period but still lets Pick for Me pick the item; "Snooze" hides it from both. Nudges are in-app only (no OS notifications). It can be turned off entirely.
+
+### Up Next
+
+Max 10 by default (3–25). Starting an item *offers* removal; completing or dropping removes it. The queue moved to its own table with a UNIQUE position (migration v4).
+
+### Lists
+
+Unique names (case/accent-insensitive). Colour is optional and decorative; the icon and name always identify the list. Deleting a list never deletes items. JSON import merges lists by name.
+
+### Stats & Year in Review
+
+UTC instants are bucketed by the **local** calendar date (system time zone). Personal dates are used as stored. Missing data is counted and shown rather than imputed. Streaks are off by default.
+
+### Release Radar
+
+"Upcoming" = the latest possible day of a partial date is today or later. Only exact dates notify or go into `.ics`. Notifications are opt-in and only fire while the app runs (no background service or login item). Date refresh is on demand; refresh-on-start is opt-in and never applies changes.
+
+### Tracker imports
+
+Skip / Keep both only (no "update from file", so an import never replaces an existing item). Goodreads exclusive shelves map to statuses; unknown shelves → Planned plus a tag, with a warning. Letterboxd viewings are stored at 12:00 UTC so their calendar date is stable across time zones. Generic mapper defaults: guess columns from the header, 0–5 stars, Y-M-D dates, `;` tag separator. Limits: 25 MB, 50,000 rows.
+
+### Goals
+
+Pace: expected = target × elapsed/total days (inclusive), with a ±max(1, 10%) tolerance. Pages = page counts of books completed in the period; hours = hours logged within the period. There are no "Goals defaults" settings: every goal is configured in its own form, and goals never notify.
+
+### Format versions
+
+JSON export `formatVersion` 1 → **2** (new optional sections; v1 still imports; newer is refused). `.mpbackup` container `formatVersion` stays **1**, because the container didn't change; the schema version (4) inside protects older apps. Layout files `schemaVersion` 1 → **2** (v1 migrated on import). Theme files stay at `schemaVersion` 1, with the new tokens optional.
+
+### Charts as images
+
+"Save as image" captures the chart's rectangle from the window in the main process (`webContents.capturePage`) and writes a PNG through a save dialog. The renderer never handles file paths. If the page is zoomed, the captured rectangle can be slightly off; scroll the chart into view and retry.

@@ -55,6 +55,12 @@ import { b2i } from '../../db/connection';
 import type { ServiceContext } from './context';
 import { libraryCounts } from './export-service';
 import type { LibraryService } from './library-service';
+import { CsvMappingSchema } from '../../domain/tracker-csv';
+import { tagKey } from '../../domain/normalize';
+
+/** CSV-only data carried alongside an item until apply. */
+type CsvExtras = ExportItem & { listNames?: string[] };
+import type { BatchKind, ImportBatchService } from './import-batch-service';
 import { ARTWORK_FILE_RE } from './artwork-service';
 import {
   CSV_COLUMNS,
@@ -73,6 +79,16 @@ interface Pending {
   conflicts: (ImportConflictView & { index: number })[];
   envelope: ExportEnvelope | null;
   at: number;
+  /** Tracker imports are recorded as undoable batches. */
+  batch: { kind: BatchKind; label: string } | null;
+  /** Conflict resolutions this import allows (trackers never replace existing items). */
+  allowed: ('skip' | 'duplicate' | 'update')[];
+}
+
+export interface StoreOptions {
+  batch?: { kind: BatchKind; label: string };
+  allowed?: ('skip' | 'duplicate' | 'update')[];
+  formatLabel?: string;
 }
 
 const MAX_MESSAGES = 100;
@@ -87,6 +103,14 @@ function emptyCounts(): CountsView {
     themes: 0,
     layouts: 0,
     artwork: 0,
+    lists: 0,
+    upNext: 0,
+    snoozes: 0,
+    goals: 0,
+    librarySources: 0,
+    sourceEntries: 0,
+    importBatches: 0,
+    mappingProfiles: 0,
   };
 }
 
@@ -96,6 +120,7 @@ export class ImportService {
   constructor(
     private readonly ctx: ServiceContext,
     private readonly library: LibraryService,
+    private readonly batches: ImportBatchService | null = null,
   ) {}
 
   private get db() {
@@ -340,6 +365,10 @@ export class ImportService {
       for (const i of formatZodIssues(personal.error).slice(0, 3)) err(i.path.replace('$.', ''), i.message);
       return null;
     }
+    const upNextCell = get('up_next_position');
+    const upNext =
+      upNextCell && /^\d{1,3}$/.test(upNextCell) && Number(upNextCell) >= 1 ? Number(upNextCell) - 1 : null;
+    const listNames = splitList(get('lists')).map((n) => n.slice(0, 80));
     const idCell = get('id');
     const id = idCell && IdSchema.safeParse(idCell).success ? idCell.toLowerCase() : randomUUID();
     const now = this.ctx.clock.now().toISOString();
@@ -360,7 +389,9 @@ export class ImportService {
       artwork: null,
       audit: [],
       customFieldsByName: {},
-    };
+      upNextPosition: upNext,
+      ...(listNames.length > 0 ? { listNames } : {}),
+    } as ExportItem;
   }
 
   /* ---------------------------------------------------------------- shared preview */
@@ -386,12 +417,13 @@ export class ImportService {
     };
   }
 
-  private storePreview(
+  storePreview(
     kind: 'json' | 'csv',
     fileLabel: string,
     list: ExportItem[],
     envelope: ExportEnvelope | null,
     messages: ValidationMessage[],
+    opts: StoreOptions = {},
   ): ImportPreviewView {
     const conflicts: (ImportConflictView & { index: number })[] = [];
     list.forEach((it, index) => {
@@ -438,10 +470,27 @@ export class ImportService {
     incoming.tags = new Set(list.flatMap((i) => i.personal.tags.map((t) => t.toLowerCase()))).size;
     incoming.themes = envelope?.data.themes.length ?? 0;
     incoming.layouts = envelope?.data.layouts ? 2 : 0;
+    const d = envelope?.data;
+    incoming.lists = d?.lists?.length ?? new Set(list.flatMap((i) => (i as CsvExtras).listNames ?? [])).size;
+    incoming.upNext = list.filter((i) => i.upNextPosition !== undefined && i.upNextPosition !== null).length;
+    incoming.snoozes = d?.snoozes?.length ?? 0;
+    incoming.goals = d?.goals?.length ?? 0;
+    incoming.librarySources = d?.librarySources?.length ?? 0;
+    incoming.sourceEntries = d?.librarySources?.reduce((n, x) => n + x.entries.length, 0) ?? 0;
+    incoming.importBatches = d?.importBatches?.length ?? 0;
+    incoming.mappingProfiles = d?.mappingProfiles?.length ?? 0;
     const hasErrors = messages.some((m) => m.severity === 'error');
     const token = hasErrors ? '' : randomBytes(16).toString('hex');
     if (token) {
-      this.pending.set(token, { kind, items: list, conflicts, envelope, at: Date.now() });
+      this.pending.set(token, {
+        kind,
+        items: list,
+        conflicts,
+        envelope,
+        at: Date.now(),
+        batch: opts.batch ?? null,
+        allowed: opts.allowed ?? ['skip', 'duplicate', 'update'],
+      });
       while (this.pending.size > 5) {
         const k = this.pending.keys().next().value;
         if (k === undefined) break;
@@ -453,9 +502,9 @@ export class ImportService {
       token,
       kind,
       fileLabel,
-      formatVersion: envelope
-        ? `${envelope.format} v${envelope.formatVersion} (app ${envelope.appVersion})`
-        : 'CSV',
+      formatVersion:
+        opts.formatLabel ??
+        (envelope ? `${envelope.format} v${envelope.formatVersion} (app ${envelope.appVersion})` : 'CSV'),
       mode: 'merge',
       incoming,
       current: libraryCounts(this.db),
@@ -466,7 +515,13 @@ export class ImportService {
         ? 'Nothing will be imported because the file has errors. Fix them and try again.'
         : `Merge: ${newCount} new item(s) will be added. ${conflicts.length} conflict(s) will be handled as you choose below. Your existing items are never deleted.${envelope?.data.themes.length ? ` ${envelope.data.themes.length} custom theme(s) will be added.` : ''}`,
       confirmationWord: null,
+      allowedResolutions: opts.allowed ?? ['skip', 'duplicate', 'update'],
     };
+  }
+
+  /** Drops a pending preview (e.g. when a mapping changes and a new preview replaces it). */
+  forget(token: string): void {
+    this.pending.delete(token);
   }
 
   /* ---------------------------------------------------------------- apply */
@@ -477,8 +532,17 @@ export class ImportService {
       throw appError('NOT_FOUND', 'This import preview has expired.', { recovery: 'Choose the file again.' });
     const db = this.db;
     const now = this.ctx.clock.now().toISOString();
-    const result: ImportResultView = { added: 0, updated: 0, skipped: 0, duplicated: 0, snapshotLabel: null };
+    const result: ImportResultView = {
+      added: 0,
+      updated: 0,
+      skipped: 0,
+      duplicated: 0,
+      snapshotLabel: null,
+      batchId: null,
+    };
     const conflictByIndex = new Map(p.conflicts.map((c) => [c.index, c]));
+    const allowed = (r: 'skip' | 'duplicate' | 'update') => (p.allowed.includes(r) ? r : 'skip');
+    const recorded: string[] = [];
     db.transaction(() => {
       const defIds = this.ensureCustomFieldDefs(p, now);
       const idMap = new Map<string, string>();
@@ -495,16 +559,18 @@ export class ImportService {
           }
           this.insertFull(it, it.id, defIds, now);
           idMap.set(it.id, it.id);
+          recorded.push(it.id);
           result.added++;
           return;
         }
-        const resolution = input.resolutions[c.id] ?? input.defaultResolution;
+        const resolution = allowed(input.resolutions[c.id] ?? input.defaultResolution);
         if (resolution === 'skip') {
           result.skipped++;
         } else if (resolution === 'duplicate') {
           const newId = randomUUID();
           this.insertFull(it, newId, defIds, now);
           idMap.set(it.id, newId);
+          recorded.push(newId);
           result.duplicated++;
         } else if (c.importIsNewer === false) {
           // Never overwrite a newer local edit.
@@ -520,8 +586,15 @@ export class ImportService {
           result.updated++;
         }
       });
+      this.applyQueue(p.items, idMap, now);
+      this.applyCsvLists(p.items, idMap, now);
       if (p.envelope) this.applyExtras(p.envelope, idMap, now);
       items.pruneOrphans(db);
+      if (p.batch && this.batches && recorded.length > 0) {
+        const batchId = this.batches.begin(p.batch.kind, p.batch.label, null);
+        for (const id of recorded) this.batches.record(batchId, id);
+        result.batchId = batchId;
+      }
     });
     this.pending.delete(input.token);
     this.ctx.log.info('import.applied', { kind: p.kind, ...result });
@@ -673,15 +746,7 @@ export class ImportService {
         );
       }
     }
-    if (
-      it.upNextPosition !== undefined &&
-      it.upNextPosition !== null &&
-      !['completed', 'dropped'].includes(it.personal.status)
-    ) {
-      // Imported queue entries go after the existing queue, keeping their relative order.
-      const max = db.get<{ p: number | null }>('SELECT max(up_next_position) AS p FROM items')?.p ?? -1;
-      db.run('UPDATE items SET up_next_position = ? WHERE id = ?', [max + 1, id]);
-    }
+
     if (it.artwork) this.attachArtwork(id, it.artwork, now);
     items.reindexItem(db, id);
     items.recomputeProgress(db, id);
@@ -724,7 +789,185 @@ export class ImportService {
     if (artId) db.run('UPDATE items SET artwork_id = ? WHERE id = ?', [artId, itemId]);
   }
 
+  /** Imported queue entries go after the existing queue in their original order, while there is room. */
+  private applyQueue(list: readonly ExportItem[], idMap: Map<string, string>, now: string): void {
+    const queued = list
+      .filter(
+        (it) =>
+          it.upNextPosition !== undefined &&
+          it.upNextPosition !== null &&
+          !['completed', 'dropped'].includes(it.personal.status),
+      )
+      .sort((a, b) => (a.upNextPosition ?? 0) - (b.upNextPosition ?? 0));
+    for (const it of queued) {
+      const id = idMap.get(it.id);
+      if (id) this.library.enqueue(id, now);
+    }
+  }
+
+  /** CSV `lists` column: lists are matched by name (case-insensitive) and created when missing. */
+  private applyCsvLists(list: readonly ExportItem[], idMap: Map<string, string>, now: string): void {
+    for (const it of list) {
+      const names = (it as CsvExtras).listNames ?? [];
+      const id = idMap.get(it.id);
+      if (!id || names.length === 0) continue;
+      for (const name of names) this.addToList(this.ensureList(name, null, null, null, now), id, now);
+    }
+  }
+
+  private ensureList(
+    name: string,
+    description: string | null,
+    color: string | null,
+    icon: string | null,
+    now: string,
+  ): string {
+    const db = this.db;
+    const key = tagKey(name);
+    const existing = db.get<{ id: string }>('SELECT id FROM lists WHERE name_key = ?', [key]);
+    if (existing) return existing.id;
+    const id = randomUUID();
+    const pos = (db.get<{ p: number | null }>('SELECT max(position) AS p FROM lists')?.p ?? -1) + 1;
+    db.run(
+      'INSERT INTO lists (id, name, name_key, description, color, icon, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, name, key, description, color, icon, pos, now, now],
+    );
+    return id;
+  }
+
+  private addToList(listId: string, itemId: string, now: string): void {
+    const pos =
+      (this.db.get<{ p: number | null }>('SELECT max(position) AS p FROM list_items WHERE list_id = ?', [
+        listId,
+      ])?.p ?? -1) + 1;
+    this.db.run(
+      'INSERT INTO list_items (list_id, item_id, position, added_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [listId, itemId, pos, now],
+    );
+  }
+
+  /**
+   * formatVersion 2 sections. Merge semantics: lists merge by name; goals,
+   * sources and batches are added when their id is new; snoozes follow their
+   * items; mapping profiles are added when the name is free. Nothing existing
+   * is overwritten or deleted.
+   */
+  private applyFeatureData(env: ExportEnvelope, idMap: Map<string, string>, now: string): void {
+    const db = this.db;
+    const d = env.data;
+    const listIdMap = new Map<string, string>();
+    for (const l of [...(d.lists ?? [])].sort((a, b) => a.position - b.position)) {
+      const lid = this.ensureList(l.name, l.description, l.color, l.icon, now);
+      listIdMap.set(l.id, lid);
+      for (const m of [...l.items].sort((a, b) => a.position - b.position)) {
+        const target = idMap.get(m.itemId);
+        if (target) this.addToList(lid, target, now);
+      }
+    }
+    for (const g of d.goals ?? []) {
+      if (db.get('SELECT 1 FROM goals WHERE id = ?', [g.id])) continue;
+      db.run(
+        `INSERT INTO goals (id, title, media_type, metric, period, start_date, end_date, target, list_id, tag, archived_at, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          g.id,
+          g.title,
+          g.mediaType,
+          g.metric,
+          g.period,
+          g.startDate,
+          g.endDate <= g.startDate ? g.startDate : g.endDate,
+          g.target,
+          g.listId ? (listIdMap.get(g.listId) ?? null) : null,
+          g.tag,
+          g.archivedAt,
+          g.createdAt,
+        ],
+      );
+    }
+    for (const z of d.snoozes ?? []) {
+      const target = idMap.get(z.itemId);
+      if (!target) continue;
+      db.run(
+        `INSERT INTO item_snoozes (item_id, until, reason, created_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(item_id) DO UPDATE SET until = max(item_snoozes.until, excluded.until)`,
+        [target, z.until, z.reason, z.createdAt],
+      );
+    }
+    for (const src of d.librarySources ?? []) {
+      if (db.get('SELECT 1 FROM library_sources WHERE id = ?', [src.id])) continue;
+      db.run(
+        'INSERT INTO library_sources (id, kind, label, account_ref, account_input, last_synced_at, last_sync_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          src.id,
+          src.kind,
+          src.label,
+          src.accountRef,
+          src.accountInput,
+          src.lastSyncedAt,
+          src.lastSyncStatus,
+          src.createdAt,
+        ],
+      );
+      for (const e of src.entries) {
+        db.run(
+          `INSERT OR IGNORE INTO library_source_entries
+             (source_id, external_id, name, platform, playtime_minutes, prev_playtime_minutes, last_played_at, non_game_reason, first_seen_at, seen_at, removed_at, ignored, item_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            src.id,
+            e.externalId,
+            e.name,
+            e.platform,
+            e.playtimeMinutes,
+            e.prevPlaytimeMinutes,
+            e.lastPlayedAt,
+            e.nonGameReason,
+            e.firstSeenAt,
+            e.seenAt,
+            e.removedAt,
+            e.ignored ? 1 : 0,
+            e.itemId ? (idMap.get(e.itemId) ?? null) : null,
+          ],
+        );
+      }
+    }
+    for (const b of d.importBatches ?? []) {
+      if (db.get('SELECT 1 FROM import_batches WHERE id = ?', [b.id])) continue;
+      const mapped = b.items.filter((i) => idMap.has(i.itemId));
+      db.run(
+        'INSERT INTO import_batches (id, kind, source_id, label, created_at, undone_at, item_count) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [
+          b.id,
+          b.kind,
+          b.sourceId && db.get('SELECT 1 FROM library_sources WHERE id = ?', [b.sourceId])
+            ? b.sourceId
+            : null,
+          b.label,
+          b.createdAt,
+          b.undoneAt,
+          mapped.length,
+        ],
+      );
+      for (const i of mapped)
+        db.run(
+          'INSERT OR IGNORE INTO import_batch_items (batch_id, item_id, title, baseline_updated_at, baseline_events) VALUES (?, ?, ?, ?, ?)',
+          [b.id, idMap.get(i.itemId) ?? i.itemId, i.title, i.baselineUpdatedAt, i.baselineEvents],
+        );
+    }
+    for (const m of d.mappingProfiles ?? []) {
+      const parsed = CsvMappingSchema.safeParse(m.mapping);
+      if (!parsed.success) continue;
+      db.run(
+        `INSERT INTO csv_mapping_profiles (id, name, name_key, mapping, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(name_key) DO NOTHING`,
+        [randomUUID(), m.name, tagKey(m.name), JSON.stringify(parsed.data), now, now],
+      );
+    }
+  }
+
   private applyExtras(env: ExportEnvelope, idMap: Map<string, string>, now: string): void {
+    this.applyFeatureData(env, idMap, now);
     const db = this.db;
     const existingThemes = listThemes(db);
     const takenNames = new Set(existingThemes.map((t) => t.name.toLowerCase()));

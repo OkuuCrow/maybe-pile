@@ -8,7 +8,11 @@ Maybe Pile is a local-first desktop app for the movies, TV shows, video games an
 - Progress that fits each medium: **movie viewings**, **TV seasons and episodes** (specials, unknown totals, "up to here"), **game progress schemes** (percent, hours, milestones, free text), and **book pages, percent or audiobook time** (unknown or changing page counts are fine). Every update is kept in an editable history.
 - **Search online sources**, preview, and import. Wikidata, TVmaze, Open Library and AniList need no setup and cover every media type; TMDB and IGDB are optional extras with free API keys. Or enter everything by hand. Refresh metadata later and choose per field what to keep; your edits are never silently overwritten.
 - **Search, filter (type, status, tags, rating, date added) and sort** large libraries instantly. Bulk actions and duplicate detection are included.
-- **Up Next** queue for what to start soon, **Pick something for me** when you can't decide, and a **This year** summary on the dashboard.
+- **Steam library import** with your own key: see what you haven't played, choose what joins the pile, re-sync later and undo imports. Other stores work through a pasted or uploaded game list.
+- **Pick for Me** (weighted, with constraints such as time tonight, lists, tags and rating), a reorderable **Up Next** shelf, gentle **Pile Health** nudges with snoozes, and your own **Lists**.
+- **Stats & Year in Review** (accessible charts, CSV/PNG export), **Release Radar** for upcoming releases (`.ics` export, opt-in notifications) and **Goals** with plain-text pace.
+- **Tracker imports** from Goodreads, Letterboxd and any CSV (column mapper with saved profiles), all with preview and undo.
+- A **command palette** (Ctrl/⌘+K) and **Quick Capture** (Ctrl/⌘+Shift+N, optional global shortcut).
 - **Themes and layouts** you can edit, share and reset. Accessible by design (keyboard, screen readers, WCAG AA contrast).
 - **Backups** (`.mpbackup`), **JSON/CSV export and import** with preview and conflict handling, and safe moves between Windows, macOS and Linux.
 
@@ -40,7 +44,7 @@ npm start              # production build + launch
 | Coverage | `npm run test:coverage` |
 | End-to-end smoke (builds, then drives the real app) | `npm run test:e2e` |
 | Everything | `npm run test:all` |
-| Benchmark (10k items / 100k episodes) | `npm run bench` |
+| Benchmark (10k items / 100k episodes / 100k history rows, stats, pile health, 10k-row import review) | `npm run bench` |
 | Live check of keyless providers (network) | `npm run smoke:providers` |
 | Regenerate the app icon | `npm run icons` |
 
@@ -64,7 +68,10 @@ See [docs/packaging.md](docs/packaging.md) for prerequisites, signing and notari
 4. **Make it yours:** Settings → **Appearance** (duplicate a built-in theme and edit its colours, with live preview and a contrast check) and **Layout** (reorder and hide dashboard and library components).
 5. **Keep it safe:** Settings → **Backup & Restore** → **Create backup…**. Restoring shows a preview and asks you to type `RESTORE`; your previous library is snapshotted first.
 6. **Online sources:** Wikidata, TVmaze, Open Library and AniList need no setup. TMDB and IGDB are optional and need free API keys: Settings → **Providers** (see [docs/providers.md](docs/providers.md)).
-7. **Decide what's next:** add items to **Up Next** from their page (or select several in the Library), reorder the queue on the dashboard, or press **Pick for me** for a random Planned item.
+7. **Decide what's next:** add items to **Up Next** from their page (or select several in the Library), reorder the queue on the dashboard, or open **Pick for Me** (Ctrl/⌘+Shift+P) and say how much time you have.
+8. **Import your Steam library:** get your own key at steamcommunity.com/dev/apikey, then **Import → Game libraries → Add Steam account**. Make your Steam *Game details* public, load the library, select unplayed games and import them. See [docs/steam-import.md](docs/steam-import.md).
+9. **Bring other trackers:** **Import → Other trackers** for Goodreads, Letterboxd or any CSV. Undo any import under **Import history & undo**.
+10. **Organize and reflect:** create **Lists**, triage **Pile Health**, set **Goals**, check **Stats** and **Upcoming releases**. Press **Ctrl/⌘+K** to jump anywhere.
 
 Press `?` at any time for keyboard shortcuts.
 
@@ -84,6 +91,9 @@ Press `?` at any time for keyboard shortcuts.
 | [troubleshooting.md](docs/troubleshooting.md) | Installation, network, database, import and recovery problems |
 | [packaging.md](docs/packaging.md) | Builds, installers, signing, CI |
 | [verification-log.md](docs/verification-log.md) | Exactly what was run for this build, and the results |
+| [steam-import.md](docs/steam-import.md) | Steam key setup, privacy settings, review/import/re-sync/undo, troubleshooting |
+| [features/](docs/features/) | One page each: Pick for Me, Up Next, Pile Health, Lists, Stats, Release Radar, Tracker Imports, Quick Capture & palette, Goals |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes and migration notes |
 
 ## AI assistance disclaimer
 

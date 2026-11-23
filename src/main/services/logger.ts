@@ -26,7 +26,8 @@ const SECRET_PATTERNS: [RegExp, string][] = [
   [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/g, '[redacted]'], // JWT (TMDB v4 tokens)
   [/\b((?:api_key|apikey|client_secret|client_id|access_token|token|key)=)[^&\s"]+/gi, '$1[redacted]'],
   [/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [redacted]'],
-  [/\b[a-f0-9]{32}\b/gi, '[redacted]'], // TMDB v3 key shape
+  [/\b[a-f0-9]{32}\b/gi, '[redacted]'], // TMDB v3 key shape; also Steam Web API keys
+  [/\b7656119\d{10}\b/g, '[steamid]'], // SteamID64
   [/\b[a-z0-9]{30}\b/g, '[redacted]'], // Twitch client id/secret shape
 ];
 

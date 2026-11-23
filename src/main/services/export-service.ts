@@ -95,6 +95,27 @@ export function exportItem(db: Db, id: string): ExportItem | null {
   };
 }
 
+export function emptyCounts(): CountsView {
+  return {
+    items: { movie: 0, tv: 0, game: 0, book: 0 },
+    episodes: 0,
+    progressEntries: 0,
+    viewings: 0,
+    tags: 0,
+    themes: 0,
+    layouts: 0,
+    artwork: 0,
+    lists: 0,
+    upNext: 0,
+    snoozes: 0,
+    goals: 0,
+    librarySources: 0,
+    sourceEntries: 0,
+    importBatches: 0,
+    mappingProfiles: 0,
+  };
+}
+
 export function libraryCounts(db: Db): CountsView {
   const byType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
   for (const r of db.all<{ type: MediaType; n: number }>(
@@ -117,6 +138,18 @@ export function libraryCounts(db: Db): CountsView {
     themes: n('SELECT count(*) AS n FROM themes'),
     layouts: n('SELECT count(DISTINCT surface) AS n FROM layout_components'),
     artwork: n("SELECT count(*) AS n FROM artwork WHERE source <> 'remote'"),
+    lists: n('SELECT count(*) AS n FROM lists'),
+    upNext: n(
+      'SELECT count(*) AS n FROM up_next u JOIN items i ON i.id = u.item_id WHERE i.deleted_at IS NULL',
+    ),
+    snoozes: n(
+      'SELECT count(*) AS n FROM item_snoozes z JOIN items i ON i.id = z.item_id WHERE i.deleted_at IS NULL',
+    ),
+    goals: n('SELECT count(*) AS n FROM goals'),
+    librarySources: n('SELECT count(*) AS n FROM library_sources'),
+    sourceEntries: n('SELECT count(*) AS n FROM library_source_entries'),
+    importBatches: n('SELECT count(*) AS n FROM import_batches'),
+    mappingProfiles: n('SELECT count(*) AS n FROM csv_mapping_profiles'),
   };
 }
 
@@ -170,9 +203,171 @@ export function buildJsonExport(db: Db, appVersion: string, now: Date): ExportEn
         autoApplySuggestions: settings.autoApplySuggestions,
         libraryView: settings.libraryView,
         csvBom: settings.csvBom,
+        upNextMax: settings.upNextMax,
+        pick: settings.pick,
+        pileHealth: settings.pileHealth,
+        releaseRadar: settings.releaseRadar,
+        quickCapture: settings.quickCapture,
+        stats: settings.stats,
+        importUndoRetentionDays: settings.importUndoRetentionDays,
       },
+      ...exportFeatureData(db),
     },
   };
+}
+
+/** formatVersion 2 sections. Secrets (API keys) live outside the database and are never included. */
+export function exportFeatureData(
+  db: Db,
+): Pick<
+  ExportEnvelope['data'],
+  'lists' | 'goals' | 'snoozes' | 'librarySources' | 'importBatches' | 'mappingProfiles'
+> {
+  type ListRow = {
+    id: string;
+    name: string;
+    description: string | null;
+    color: string | null;
+    icon: string | null;
+    position: number;
+  };
+  const lists = db
+    .all<ListRow>('SELECT id, name, description, color, icon, position FROM lists ORDER BY position')
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      description: l.description,
+      color: l.color as NonNullable<ExportEnvelope['data']['lists']>[number]['color'],
+      icon: l.icon as NonNullable<ExportEnvelope['data']['lists']>[number]['icon'],
+      position: l.position,
+      items: db
+        .all<{ item_id: string; position: number }>(
+          `SELECT li.item_id, li.position FROM list_items li JOIN items i ON i.id = li.item_id
+         WHERE li.list_id = ? AND i.deleted_at IS NULL ORDER BY li.position`,
+          [l.id],
+        )
+        .map((r) => ({ itemId: r.item_id, position: r.position })),
+    }));
+  const goals = db
+    .all<{
+      id: string;
+      title: string;
+      media_type: MediaType | null;
+      metric: 'items' | 'pages' | 'episodes' | 'hours';
+      period: 'year' | 'month' | 'custom';
+      start_date: string;
+      end_date: string;
+      target: number;
+      list_id: string | null;
+      tag: string | null;
+      archived_at: string | null;
+      created_at: string;
+    }>('SELECT * FROM goals ORDER BY created_at')
+    .map((g) => ({
+      id: g.id,
+      title: g.title,
+      mediaType: g.media_type,
+      metric: g.metric,
+      period: g.period,
+      startDate: g.start_date,
+      endDate: g.end_date,
+      target: g.target,
+      listId: g.list_id,
+      tag: g.tag,
+      archivedAt: g.archived_at,
+      createdAt: g.created_at,
+    }));
+  const snoozes = db
+    .all<{ item_id: string; until: string; reason: 'manual' | 'pile-health' | 'keep'; created_at: string }>(
+      `SELECT z.item_id, z.until, z.reason, z.created_at FROM item_snoozes z JOIN items i ON i.id = z.item_id WHERE i.deleted_at IS NULL`,
+    )
+    .map((z) => ({ itemId: z.item_id, until: z.until, reason: z.reason, createdAt: z.created_at }));
+  const librarySources = db
+    .all<{
+      id: string;
+      kind: 'steam' | 'manual';
+      label: string;
+      account_ref: string | null;
+      account_input: string | null;
+      last_synced_at: string | null;
+      last_sync_status: 'ok' | 'private' | 'error' | 'cancelled' | 'empty' | null;
+      created_at: string;
+    }>('SELECT * FROM library_sources ORDER BY created_at')
+    .map((src) => ({
+      id: src.id,
+      kind: src.kind,
+      label: src.label,
+      accountRef: src.account_ref,
+      accountInput: src.account_input,
+      lastSyncedAt: src.last_synced_at,
+      lastSyncStatus: src.last_sync_status,
+      createdAt: src.created_at,
+      entries: db
+        .all<{
+          external_id: string;
+          name: string;
+          platform: string | null;
+          playtime_minutes: number | null;
+          prev_playtime_minutes: number | null;
+          last_played_at: string | null;
+          non_game_reason: string | null;
+          first_seen_at: string;
+          seen_at: string;
+          removed_at: string | null;
+          ignored: number;
+          item_id: string | null;
+        }>(
+          `SELECT e.*, CASE WHEN i.deleted_at IS NULL THEN e.item_id END AS item_id
+           FROM library_source_entries e LEFT JOIN items i ON i.id = e.item_id WHERE e.source_id = ? ORDER BY e.external_id`,
+          [src.id],
+        )
+        .map((e) => ({
+          externalId: e.external_id,
+          name: e.name,
+          platform: e.platform,
+          playtimeMinutes: e.playtime_minutes,
+          prevPlaytimeMinutes: e.prev_playtime_minutes,
+          lastPlayedAt: e.last_played_at,
+          nonGameReason: e.non_game_reason,
+          firstSeenAt: e.first_seen_at,
+          seenAt: e.seen_at,
+          removedAt: e.removed_at,
+          ignored: e.ignored === 1,
+          itemId: e.item_id,
+        })),
+    }));
+  const importBatches = db
+    .all<{
+      id: string;
+      kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped';
+      source_id: string | null;
+      label: string;
+      created_at: string;
+      undone_at: string | null;
+    }>('SELECT * FROM import_batches ORDER BY created_at')
+    .map((b) => ({
+      id: b.id,
+      kind: b.kind,
+      sourceId: b.source_id,
+      label: b.label,
+      createdAt: b.created_at,
+      undoneAt: b.undone_at,
+      items: db
+        .all<{ item_id: string; title: string; baseline_updated_at: string; baseline_events: number }>(
+          'SELECT item_id, title, baseline_updated_at, baseline_events FROM import_batch_items WHERE batch_id = ?',
+          [b.id],
+        )
+        .map((i) => ({
+          itemId: i.item_id,
+          title: i.title,
+          baselineUpdatedAt: i.baseline_updated_at,
+          baselineEvents: i.baseline_events,
+        })),
+    }));
+  const mappingProfiles = db
+    .all<{ name: string; mapping: string }>('SELECT name, mapping FROM csv_mapping_profiles ORDER BY name')
+    .map((m) => ({ name: m.name, mapping: JSON.parse(m.mapping) as unknown }));
+  return { lists, goals, snoozes, librarySources, importBatches, mappingProfiles };
 }
 
 export function buildCsvExport(db: Db, bom: boolean): string {
@@ -219,6 +414,8 @@ export function buildCsvExport(db: Db, bom: boolean): string {
       progress: d.progress.label,
       progress_percent: d.progress.percent,
       notes: d.personal.notes,
+      lists: joinList(d.lists.map((l) => l.name)),
+      up_next_position: d.upNextPosition === null ? null : d.upNextPosition + 1,
     };
     rows.push(CSV_COLUMNS.map((c) => record[c]));
   }

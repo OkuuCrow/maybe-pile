@@ -1,11 +1,19 @@
 {
   "format": "maybepile-layout",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "dashboard": [
+    { "id": "upNext", "visible": true, "span": 1 },
+    { "id": "pick", "visible": true, "span": 1 },
     { "id": "continue", "visible": true, "span": 2 },
+    { "id": "goals", "visible": true, "span": 1 },
+    { "id": "upcoming", "visible": true, "span": 1 },
+    { "id": "pileHealth", "visible": true, "span": 2 },
     { "id": "recentlyAdded", "visible": true, "span": 1 },
     { "id": "activity", "visible": true, "span": 1 },
     { "id": "counts", "visible": true, "span": 2 },
+    { "id": "lists", "visible": false, "span": 1 },
+    { "id": "statsSummary", "visible": false, "span": 1 },
+    { "id": "yearStats", "visible": false, "span": 1 },
     { "id": "recentlyUpdated", "visible": false, "span": 1 },
     { "id": "recentlyCompleted", "visible": false, "span": 1 },
     { "id": "tags", "visible": false, "span": 2 }
