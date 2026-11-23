@@ -87,7 +87,7 @@ Press `?` at any time for keyboard shortcuts.
 
 ## AI assistance disclaimer
 
-AI tools were used as an assistant during development of Maybe Pile, including for finding and fixing bugs. All changes were reviewed and are maintained by the project owner.
+AI tools were used as an assistant during development of Maybe Pile, including for finding and fixing bugs, and assisting in making the GitHub page. All changes were reviewed and are maintained by the project owner.
 
 ## License
 
