@@ -48,7 +48,7 @@ Never commit certificates or passwords. Store them as CI secrets.
 
 ## CI
 
-`.github/workflows/ci.yml` runs lint, type-check, unit/integration/UI tests and the e2e smoke test on ubuntu, windows and macos, then packages each OS and uploads the artifacts. It was **written but has not been executed** as part of this work; see [verification-log.md](verification-log.md).
+`.github/workflows/ci.yml` runs lint, type-check, unit/integration/UI tests and the e2e smoke test on ubuntu, windows and macos, then packages each OS and uploads the artifacts. It runs on every push to `main`; the Actions tab shows results.
 
 ## Auto-update
 
