@@ -93,7 +93,9 @@ export function resolveRendererPath(
   } catch {
     return null;
   }
-  if (decoded.includes('\0')) return null;
+  // Reject NUL and backslashes on every OS: "\" is a separator on Windows but an ordinary
+  // filename character elsewhere, so allowing it would make the policy platform-dependent.
+  if (decoded.includes('\0') || decoded.includes('\\')) return null;
   const rel = decoded.replace(/^\/+/, '') || 'index.html';
   const full = resolve(root, rel);
   const base = resolve(root);

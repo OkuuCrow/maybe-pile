@@ -122,8 +122,18 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
     episode: SeasonView['episodes'][number] | null;
   } | null>(null);
   const totals = tvTotals(item.seasons);
-  const toggle = (ids: string[], watched: boolean, scope: 'episode' | 'season' | 'upTo') =>
-    run(() => call(getApi().progress.toggleEpisodes({ itemId: item.id, episodeIds: ids, watched, scope })));
+  // Optimistic checkmarks: a ticked box shows immediately and reverts if the save fails.
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const toggle = async (ids: string[], watched: boolean, scope: 'episode' | 'season' | 'upTo') => {
+    setPending((p) => ({ ...p, ...Object.fromEntries(ids.map((id) => [id, watched])) }));
+    try {
+      await run(() =>
+        call(getApi().progress.toggleEpisodes({ itemId: item.id, episodeIds: ids, watched, scope })),
+      );
+    } finally {
+      setPending((p) => Object.fromEntries(Object.entries(p).filter(([id]) => !ids.includes(id))));
+    }
+  };
 
   const upTo = (season: SeasonView, epNumber: number) => {
     const ids: string[] = [];
@@ -218,7 +228,7 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
                         <input
                           id={`ep-${e.id}`}
                           type="checkbox"
-                          checked={e.watched}
+                          checked={pending[e.id] ?? e.watched}
                           disabled={readOnly || busy}
                           onChange={(ev) => void toggle([e.id], ev.target.checked, 'episode')}
                         />

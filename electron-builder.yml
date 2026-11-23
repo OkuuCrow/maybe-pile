@@ -69,6 +69,10 @@ linux:
     - tar.gz
   icon: build/icon.png
   executableName: maybe-pile
+  maintainer: Maybe Pile contributors <83544754+OkuuCrow@users.noreply.github.com>
+  vendor: Maybe Pile
+  # No spaces in Linux file names (tar.gz uses this; deb/rpm keep their distro-standard default names).
+  artifactName: Maybe-Pile-${version}-${arch}.${ext}
   category: Utility
   synopsis: A local-first backlog for movies, shows, games and books
   description: Someday, maybe. Now organized. Track what you want to watch, play and read — offline, private, portable.
