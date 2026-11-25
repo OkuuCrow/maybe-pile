@@ -2,7 +2,7 @@
  * Dev-only benchmark: builds a library of 10,000 items with 100,000 TV episode
  * rows in a temp directory and times typical queries. Usage: npm run bench
  */
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Db } from '../src/db/connection';
@@ -168,5 +168,25 @@ time('library source review: 10,000 rows', () => f.sources.entries(filter));
 time('library source review: search within 10,000', () =>
   f.sources.entries({ ...filter, search: 'game 99' }),
 );
+/* ---- Expansion Pack 2 ---- */
+time('pile time totals', () => f.pileTime.totals());
+time('what fits in 2 hours', () => f.pileTime.fits(120, null));
+time('pick: finish within 5 h + series order', () =>
+  f.pick.roll({
+    constraints: { ...constraints, finishWithinMinutes: 300, respectSeriesOrder: true },
+    avoid: [],
+    seed: 1,
+  }),
+);
+time('recommendations', () => f.recommendations.list(12));
+time('duplicate pairs', () => f.merge.findPairs());
+time('pile value summary', () => f.value.summary());
+time('completion heatmap (year)', () => f.stats.heatmap(new Date().getFullYear()));
+const syncDir = join(dir, 'sync-folder');
+mkdirSync(syncDir);
+f.sync.setFolder(syncDir, 'Bench');
+time('sync preview (first sync, all items outgoing)', () => f.sync.preview());
+time('sync apply (snapshot + baseline + log write)', () => f.sync.apply());
+time('sync preview (no changes)', () => f.sync.preview());
 db.close();
 rmSync(dir, { recursive: true, force: true });

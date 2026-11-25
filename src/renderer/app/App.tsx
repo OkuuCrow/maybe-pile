@@ -14,6 +14,10 @@ import { AddDialog } from '../features/add/AddDialog';
 import { Settings } from '../features/settings/Settings';
 import { PickPage } from '../features/pick/PickPage';
 import { HealthPage } from '../features/health/HealthPage';
+import { PilePage } from '../features/pile/PilePage';
+import type { SessionView } from '../../shared/types';
+import { formatDuration } from '../../domain/sessions';
+import { IconTimer } from '../components/Icons';
 import { ListDetailPage, ListsPage } from '../features/lists/ListsPage';
 import { StatsPage } from '../features/stats/StatsPage';
 import { GoalsPage } from '../features/goals/GoalsPage';
@@ -174,7 +178,7 @@ function Shell() {
   ].filter((n): n is NonNullable<typeof n> => n !== null);
 
   const navItem = (
-    name: 'dashboard' | 'library' | 'settings' | 'lists' | 'stats' | 'import',
+    name: 'dashboard' | 'library' | 'settings' | 'lists' | 'stats' | 'import' | 'pile',
     label: string,
     icon: ReactNode,
   ) => {
@@ -218,12 +222,14 @@ function Shell() {
           <ul className="nav-list">
             {navItem('dashboard', S.nav.dashboard, <IconHome />)}
             {navItem('library', S.nav.library, <IconStack />)}
+            {navItem('pile', 'Pile', <IconGrid />)}
             {navItem('lists', 'Lists', <IconList />)}
             {navItem('stats', 'Stats', <IconGrid />)}
             {navItem('import', 'Import', <IconPlus />)}
             {navItem('settings', S.nav.settings, <IconGear />)}
           </ul>
         </nav>
+        <HeaderTimer />
         <button
           type="button"
           className="button"
@@ -274,6 +280,7 @@ function Shell() {
         {app.route.name === 'stats' && <StatsPage />}
         {app.route.name === 'goals' && <GoalsPage />}
         {app.route.name === 'upcoming' && <UpcomingPage />}
+        {app.route.name === 'pile' && <PilePage />}
         {app.route.name === 'import' && <ImportPage tab={app.route.tab} />}
       </main>
       {app.addOpen && <AddDialog onClose={app.closeAdd} />}
@@ -358,4 +365,52 @@ function PaletteHost() {
     [app, themes, layout, toast],
   );
   return <CommandPalette commands={commands} onClose={() => app.setPaletteOpen(false)} />;
+}
+
+/** Running/paused session timers (they survive restarts; state lives in the database). */
+function HeaderTimer() {
+  const app = useApp();
+  const [open, setOpen] = useState<SessionView[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+  const [fetched, setFetched] = useState(() => Date.now());
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      void call(getApi().sessions.open())
+        .then((r) => {
+          if (!alive) return;
+          setOpen(r);
+          setFetched(Date.now());
+        })
+        .catch(() => undefined);
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [app.dataVersion]);
+  const running = open.find((s) => s.state === 'running');
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [running]);
+  const s = running ?? open[0];
+  if (!s) return null;
+  const secs =
+    s.state === 'running' ? s.seconds + Math.max(0, Math.floor((now - fetched) / 1000)) : s.seconds;
+  return (
+    <a
+      className="button header-timer"
+      href={`#/item/${s.itemId}`}
+      aria-label={`${s.state === 'running' ? 'Timer running' : 'Timer paused'} for ${s.itemTitle}: ${formatDuration(secs)}. Open item.`}
+    >
+      <IconTimer />{' '}
+      <span aria-hidden="true">
+        {s.state === 'running' ? '' : 'Paused · '}
+        {formatDuration(secs)}
+      </span>
+    </a>
+  );
 }

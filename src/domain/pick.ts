@@ -36,6 +36,12 @@ export interface PickCandidate {
   inUpNext: boolean;
   /** Snoozed via Pile Health, or skipped with "Not now" recently. */
   excluded: 'snoozed' | 'skipped' | null;
+  /* Expansion Pack 2 (optional so older callers/tests keep working). */
+  moodIds?: string[];
+  /** Pile Time remaining (minutes), null when unknown. */
+  remainingMinutes?: number | null;
+  /** In an ordered series and not the next entry. */
+  seriesBlocked?: boolean;
 }
 
 export interface PickConstraints {
@@ -52,6 +58,12 @@ export interface PickConstraints {
   ratingFloor: number | null;
   /** Exclude items skipped with "Not now" whose skip hasn't expired. */
   excludeSkipped: boolean;
+  /** Items must carry all these moods. */
+  moodIds?: string[] | undefined;
+  /** Pile Time: only items that can be *finished* within this many minutes. */
+  finishWithinMinutes?: number | null | undefined;
+  /** Skip series entries that aren't next (ordered series only). */
+  respectSeriesOrder?: boolean | undefined;
 }
 
 export interface PickPreferences {
@@ -83,7 +95,10 @@ export type ConstraintKey =
   | 'listIds'
   | 'onlyUpNext'
   | 'availableMinutes'
-  | 'ratingFloor';
+  | 'ratingFloor'
+  | 'moods'
+  | 'finishWithin'
+  | 'seriesOrder';
 
 export const CONSTRAINT_LABELS: Record<ConstraintKey, string> = {
   status: 'Only Planned items are eligible (In Progress and On Hold are off)',
@@ -96,6 +111,9 @@ export const CONSTRAINT_LABELS: Record<ConstraintKey, string> = {
   onlyUpNext: 'Only Up Next',
   availableMinutes: 'Available time',
   ratingFloor: 'Minimum rating',
+  moods: 'Mood',
+  finishWithin: 'Finish within (Pile Time)',
+  seriesOrder: 'Series order (only the next entry of an ordered series)',
 };
 
 /** Time slack: a 90-minute evening fits films up to 110 minutes. */
@@ -121,7 +139,7 @@ export function sessionMinutes(tags: readonly string[]): number | 'short' | null
 export function fitsTime(c: PickCandidate, minutes: number): boolean {
   if (c.type === 'movie')
     return c.runtimeMinutes !== null && c.runtimeMinutes <= minutes + TIME_SLACK_MINUTES;
-  if (c.type === 'tv') return c.episodeRuntime !== null && c.episodeRuntime <= minutes;
+  if (c.type === 'tv' || c.type === 'anime') return c.episodeRuntime !== null && c.episodeRuntime <= minutes;
   const s = sessionMinutes(c.tags);
   return s === 'short' || (s !== null && s <= minutes);
 }
@@ -159,6 +177,21 @@ export function filterCandidates(all: readonly PickCandidate[], c: PickConstrain
       c.availableMinutes !== null,
     ],
     ['ratingFloor', (x) => x.rating !== null && x.rating >= (c.ratingFloor ?? 0), c.ratingFloor !== null],
+    [
+      'moods',
+      (x) => (c.moodIds ?? []).every((m) => (x.moodIds ?? []).includes(m)),
+      (c.moodIds ?? []).length > 0,
+    ],
+    [
+      'finishWithin',
+      (x) =>
+        x.remainingMinutes !== null &&
+        x.remainingMinutes !== undefined &&
+        x.remainingMinutes > 0 &&
+        x.remainingMinutes <= (c.finishWithinMinutes ?? 0),
+      c.finishWithinMinutes !== null && c.finishWithinMinutes !== undefined,
+    ],
+    ['seriesOrder', (x) => !x.seriesBlocked, c.respectSeriesOrder === true],
   ];
   let pool = [...all];
   let emptiedBy: ConstraintKey | null = null;
@@ -240,7 +273,7 @@ export function pickReasons(c: PickCandidate, k: PickConstraints, today: string)
     const len =
       c.type === 'movie'
         ? `${c.runtimeMinutes} min`
-        : c.type === 'tv'
+        : c.type === 'tv' || c.type === 'anime'
           ? `${c.episodeRuntime}-min episodes`
           : sessionMinutes(c.tags) === 'short'
             ? 'tagged short'

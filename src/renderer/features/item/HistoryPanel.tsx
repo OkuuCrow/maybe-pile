@@ -70,7 +70,7 @@ export function HistoryPanel({
   if (list.length === 0 && vlist.length === 0) return <p className="muted">No progress recorded yet.</p>;
   return (
     <>
-      {item.type === 'tv' && (
+      {(item.type === 'tv' || item.type === 'anime') && (
         <p className="field-hint">
           Episode history is a log; editing or deleting an entry does not change episode checkmarks.
         </p>

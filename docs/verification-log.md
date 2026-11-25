@@ -199,3 +199,45 @@ Evaluated and rejected: **Google Books** without an API key returned HTTP 429 on
 Bugs found by the new tests and fixed: Up Next/layout reorder lost keyboard focus when an item reached the top or bottom (the button it was on became disabled); AniList role strings with qualifiers ("Story & Art (vols 1-41)") dropped manga authors; AniList counted every "… Director" credit as a director; Wikidata TV listed every episode director as a creator.
 
 Windows installers were **not** rebuilt for 1.1.0 (they are build output, not stored in git); run `npm run dist:win` to produce them.
+
+
+## 2.0.0 (Expansion Pack 2): 24–25 Nov 2026, Windows 11 Home (10.0.26300)
+
+These were all run in this environment, and the results were seen here.
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` (node, web, ui-tests configs) | exit 0 |
+| `npm run lint` (`eslint . --max-warnings 0`) | exit 0 |
+| `npx prettier --check .` | all files formatted |
+| `npx vitest run` | **20 files, 559 tests passed**. Before this work: 15 files, 416 tests. |
+| `npm run build` | main 1.5 MB, renderer JS 666 kB, built OK |
+| `npx playwright test` (built Electron app) | **2 passed**: `smoke.spec.ts` (full 1.x acceptance flow) and `pack2.spec.ts` (manual redirects in real Electron, Pile page, anime add, item panels, session timer and header timer) |
+| `npm run bench` | 10,000 items, 100,000 episode rows and 100,000 progress rows; results below |
+
+Benchmark (Expansion Pack 2 rows, same run):
+
+```
+pile time totals                                     349.2 ms
+what fits in 2 hours                                 348.9 ms
+pick: finish within 5 h + series order               370.8 ms
+recommendations                                      355.1 ms
+duplicate pairs                                       32.0 ms
+pile value summary                                     2.6 ms
+completion heatmap (year)                              4.2 ms
+sync preview (first sync, all items outgoing)         34.2 ms
+sync apply (snapshot + baseline + log write)         484.8 ms
+sync preview (no changes)                             40.3 ms
+```
+
+**Bug found by e2e and fixed:** Electron's `net.fetch` with `redirect: 'manual'` throws "Redirect was cancelled" instead of returning the 3xx response. The unit tests, which use fetch fakes, couldn't catch this. Main now uses `net.request` for image fetches (`src/main/electron-fetch.ts`), and the e2e spec asserts both the Electron behaviour and the fix.
+
+**Live network calls made here:**
+
+- `curl` HEAD requests to `covers.openlibrary.org/b/id/8739161-L.jpg` (302 → `archive.org`) and the `archive.org` URL it pointed to (302 → `ia902809.us.archive.org`). These established the redirect allowlist.
+- Download of the SteamGridDB OpenAPI spec (`/static/openapi.yml`, HTTP 200) and its terms page (HTTP 200, script-rendered with no readable text).
+- `jikan.moe/terms` (HTTP 404).
+
+**No live API calls** were made to Kitsu, MAL, Jikan, AniList, fanart.tv, SteamGridDB, TMDB or IGDB for this release. These sources are verified only against recorded-shape fixtures (`tests/unit/pack2-providers.test.ts`). Manual live check: add your keys in Settings → Providers, search "Frieren" with *All anime sources*, import, then open **Artwork…** on the item.
+
+**Not done here:** macOS and Linux builds and runs; packaged installers (unsigned packaged executables are blocked by App Control on this machine, so they were not launched); a screen-reader pass (automated axe checks only).

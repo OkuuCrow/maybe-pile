@@ -19,15 +19,23 @@ export interface HttpRequest {
   timeoutMs: number;
   maxBytes: number;
   signal?: AbortSignal;
+  /**
+   * When set, redirects are followed manually (max 3 hops) and only to https
+   * URLs on the same host or a host matching this list (exact, or `*.suffix`).
+   * Anything else fails with `redirect-blocked`. Used for all image fetches.
+   */
+  redirectHosts?: readonly string[];
 }
 
 export interface HttpResponse {
   status: number;
   headers: Record<string, string>;
   body: Uint8Array;
+  /** URL that produced the response (after allowed redirects). */
+  finalUrl?: string;
 }
 
-export type HttpFailureKind = 'network' | 'timeout' | 'too-large' | 'aborted';
+export type HttpFailureKind = 'network' | 'timeout' | 'too-large' | 'aborted' | 'redirect-blocked';
 
 export class HttpFailure extends Error {
   constructor(
@@ -50,9 +58,40 @@ type FetchLike = (
     headers: Record<string, string>;
     body?: string;
     signal: AbortSignal;
-    redirect: 'follow' | 'error';
+    redirect: 'follow' | 'error' | 'manual';
   },
 ) => Promise<Response>;
+
+export const MAX_REDIRECTS = 3;
+
+/** Whether `host` matches an allowlist entry (exact host, or `*.suffix` for subdomains). */
+export function hostMatches(host: string, list: readonly string[]): boolean {
+  const h = host.toLowerCase();
+  return list.some((e) => {
+    const x = e.toLowerCase();
+    return x.startsWith('*.') ? h.endsWith(x.slice(1)) && h.length > x.length - 1 : h === x;
+  });
+}
+
+/** Validates one redirect hop. Returns the absolute next URL or null when blocked. */
+export function nextRedirect(
+  current: string,
+  location: string | null,
+  allow: readonly string[],
+): string | null {
+  if (!location) return null;
+  let next: URL;
+  try {
+    next = new URL(location, current);
+  } catch {
+    return null;
+  }
+  if (next.protocol !== 'https:' || next.username || next.password) return null;
+  if (next.port && next.port !== '443') return null;
+  const cur = new URL(current);
+  if (next.hostname === cur.hostname || hostMatches(next.hostname, allow)) return next.toString();
+  return null;
+}
 
 export const USER_AGENT = 'MaybePile/1.0 (desktop media backlog; +https://github.com/maybe-pile/maybe-pile)';
 
@@ -66,15 +105,27 @@ export function createFetchClient(fetchImpl: FetchLike): HttpClient {
       req.signal?.addEventListener('abort', onAbort, { once: true });
       try {
         let res: Response;
+        let url = req.url;
         try {
-          res = await fetchImpl(req.url, {
-            method: req.method ?? 'GET',
-            headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...req.headers },
-            ...(req.body !== undefined ? { body: req.body } : {}),
-            signal: controller.signal,
-            redirect: 'follow',
-          });
+          for (let hop = 0; ; hop++) {
+            res = await fetchImpl(url, {
+              method: req.method ?? 'GET',
+              headers: { 'User-Agent': USER_AGENT, Accept: 'application/json', ...req.headers },
+              ...(req.body !== undefined ? { body: req.body } : {}),
+              signal: controller.signal,
+              redirect: req.redirectHosts ? 'manual' : 'follow',
+            });
+            if (!req.redirectHosts) break;
+            const isRedirect = res.status === 0 || (res.status >= 300 && res.status < 400);
+            if (!isRedirect) break;
+            await res.body?.cancel().catch(() => undefined);
+            const next = nextRedirect(url, res.headers.get('location'), req.redirectHosts);
+            if (!next || hop + 1 > MAX_REDIRECTS)
+              throw new HttpFailure('redirect-blocked', 'Redirect to a disallowed host.');
+            url = next;
+          }
         } catch (e) {
+          if (e instanceof HttpFailure) throw e;
           if (controller.signal.aborted) {
             const reason = controller.signal.reason as Error | undefined;
             throw new HttpFailure(
@@ -114,7 +165,7 @@ export function createFetchClient(fetchImpl: FetchLike): HttpClient {
         res.headers.forEach((v, k) => {
           headers[k.toLowerCase()] = v;
         });
-        return { status: res.status, headers, body };
+        return { status: res.status, headers, body, finalUrl: url };
       } finally {
         clearTimeout(timer);
         req.signal?.removeEventListener('abort', onAbort);
@@ -167,6 +218,7 @@ export async function requestJson<S extends z.ZodType>(
       if (e.kind === 'too-large')
         return { kind: 'malformedResponse', detail: 'Response exceeded the size limit.' };
       if (e.kind === 'aborted') return { kind: 'networkError', detail: 'Cancelled.' };
+      if (e.kind === 'redirect-blocked') return { kind: 'networkError', detail: 'Blocked redirect.' };
       return { kind: 'networkError', detail: 'Could not reach the service.' };
     }
     throw e;

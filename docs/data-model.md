@@ -94,3 +94,29 @@ All child tables reference `items(id)` with `ON DELETE CASCADE`. Lookup tables (
 ## Partial dates
 
 Release, air and publication dates are `YYYY`, `YYYY-MM` or `YYYY-MM-DD` and are validated for real calendar days. `release_year` is stored separately for duplicate checks. Personal dates (added/started/completed) are always full local calendar dates with no time zone conversion. Timestamps are UTC ISO-8601.
+
+
+## Schema v5 (Expansion Pack 2)
+
+| Table / column | Purpose |
+| --- | --- |
+| `items.type` gains `anime`; `item_creators.role` gains `studio`; `external_ids.kind` gains `kitsu`; `goals.media_type` gains `anime`; `import_batches.kind` gains `mal-xml` | Tables rebuilt with foreign keys temporarily off (`rid` preserved, so FTS keeps working). |
+| `anime_details` | Format, airing status, season/year, source, episode count/length, next episode, adult flag, romaji/English/native titles. |
+| `item_prefs` | Spoiler mode, notes-are-spoilers, hours source, audio preference. |
+| `time_estimates` (item, source manual\|provider) | Pile Time estimates. |
+| `moods`, `item_moods` | Moods (9 built-ins seeded). |
+| `item_runs`, `run_episode_states` | Runs and snapshots of finished runs' episode checkmarks. |
+| `item_relations`, `relation_suggestions`, `franchises`, `franchise_items` | Links, provider suggestions, ordered series. |
+| `purchases` | `amount_minor` integer + ISO 4217 `currency`. |
+| `sessions` | Timer state (`accumulated_seconds`, `segment_started_at`), plus CHECKs tying state to its columns. |
+| `services`, `availability_entries`, `availability_notifications` | Ownership, subscriptions, Leaving Soon. |
+| `rec_feedback` | Not now / Not interested. |
+| `merged_ids`, `duplicate_dismissals`, `merge_snapshots` | Duplicate merge, its history, and undo snapshots (JSON, deliberately). |
+| `streaming_links` | Provider-documented where-to-watch links (allowlisted https only). |
+| `artwork` + `item_id, slot, origin, source_asset_id, width, height, language, license_note, attribution_text, cache_state, sha256, selected, user_selected, is_auto, adult, fetched_at` | Multi-slot artwork. A unique partial index allows one selected image per (item, slot). `items.artwork_id` still mirrors the selected cover. |
+
+Deliberate JSON columns: `merge_snapshots.snapshot` (an opaque restore blob) and `streaming_links.subs` / `dubs` (short language-code arrays, validated with `json_valid`).
+
+## Schema v6 (sync)
+
+`sync_state`, `sync_baseline` (`fields` is deliberately JSON: an opaque per-key snapshot), `sync_cursors` and `sync_conflicts` (local and remote values as JSON). See [sync.md](sync.md).

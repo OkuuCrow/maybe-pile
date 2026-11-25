@@ -32,6 +32,8 @@ import { IconArrowDown, IconArrowUp, IconCheck, IconAlert } from '../../componen
 import { ExternalLink } from '../item/LinksPanel';
 import { ImportPreviewDialog } from './ImportPreviewDialog';
 import { FeaturesSettings } from './FeaturesSettings';
+import { Pack2Settings } from './Pack2Settings';
+import { SyncSettings } from './SyncSettings';
 import { SteamSetupForm } from '../import/SteamSetup';
 import { REGIONS } from './regions';
 
@@ -72,7 +74,12 @@ export function Settings({ tab }: { tab: SettingsTab }) {
           {tab === 'layout' && <LayoutTab />}
           {tab === 'providers' && <ProvidersTab />}
           {tab === 'library' && <LibraryTab />}
-          {tab === 'features' && <FeaturesSettings />}
+          {tab === 'features' && (
+            <>
+              <FeaturesSettings />
+              <Pack2Settings />
+            </>
+          )}
           {tab === 'backup' && <BackupTab />}
           {tab === 'data' && <DataTab />}
           {tab === 'about' && <AboutTab />}
@@ -694,11 +701,19 @@ function ProviderCard({ p, onChange }: { p: ProviderInfo; onChange: (l: Provider
   };
   return (
     <section className="card provider-card" aria-labelledby={`prov-${p.id}`}>
-      <h3 id={`prov-${p.id}`}>{p.displayName}</h3>
+      <h3 id={`prov-${p.id}`}>
+        {p.displayName}
+        {p.kind === 'art' && <span className="badge"> Artwork only</span>}
+      </h3>
       <p>
         Covers: {p.supports.map(typeLabel).join(', ')} · Rate limit: {p.rateLimitText} · Artwork:{' '}
         {p.cachingPolicy === 'cache-allowed' ? 'saved for offline use' : 'shown from the web only'}
       </p>
+      {p.termsNote && (
+        <p className="notice notice-info provider-terms">
+          <IconAlert /> <span>{p.termsNote}</span>
+        </p>
+      )}
       <p className={p.configured ? 'success-text' : 'warning-text'}>
         {p.configured ? <IconCheck /> : <IconAlert />} {p.configured ? 'Ready to use' : 'Needs credentials'}
       </p>
@@ -716,7 +731,7 @@ function ProviderCard({ p, onChange }: { p: ProviderInfo; onChange: (l: Provider
         <div key={f} className="row wrap key-row">
           <TextField
             type="password"
-            label={`${KEY_LABELS[f]}${p.keysSet[f] ? ' (saved)' : ''}`}
+            label={`${p.keyLabels[f] ?? KEY_LABELS[f]}${p.keysSet[f] ? ' (saved)' : ''}`}
             hint={
               p.keysSet[f]
                 ? 'A value is saved. Enter a new one to replace it. Saved keys are never shown.'
@@ -1120,6 +1135,9 @@ function DataTab() {
   const info = app.info;
   return (
     <div>
+      <section className="card">
+        <SyncSettings />
+      </section>
       <section className="card">
         <h3>Data location</h3>
         <p>

@@ -18,6 +18,7 @@ export type Route =
   | { name: 'goals' }
   | { name: 'health' }
   | { name: 'upcoming' }
+  | { name: 'pile' }
   | { name: 'import'; tab: ImportTab };
 
 export const IMPORT_TABS = ['sources', 'trackers', 'history'] as const;
@@ -46,6 +47,7 @@ export function parseHash(hash: string): Route {
   if (a === 'goals') return { name: 'goals' };
   if (a === 'health') return { name: 'health' };
   if (a === 'upcoming') return { name: 'upcoming' };
+  if (a === 'pile') return { name: 'pile' };
   if (a === 'import')
     return {
       name: 'import',

@@ -136,7 +136,7 @@ describe('JSON export/import', () => {
     const preview = other.importer.previewJson(text, 'export.json');
     expect(preview.messages.filter((m) => m.severity === 'error')).toEqual([]);
     expect(preview.canApply).toBe(true);
-    expect(preview.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1 });
+    expect(preview.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1, anime: 0 });
     expect(preview.conflicts).toEqual([]);
     const r = other.importer.apply({
       token: preview.token,
@@ -264,7 +264,7 @@ describe('CSV export/import', () => {
     const csv = buildCsvExport(env.ctx.db(), false);
     const p = other.importer.previewCsv(csv, 'lib.csv');
     expect(p.messages.filter((m) => m.severity === 'error')).toEqual([]);
-    expect(p.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1 });
+    expect(p.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1, anime: 0 });
     other.importer.apply({ token: p.token, defaultResolution: 'skip', resolutions: {}, confirmation: '' });
     const page = other.library.query(await_default());
     expect(page.items.map((i) => i.title)).toEqual(['Arrival', 'Hades', 'Piranesi', 'Severance']);
@@ -308,7 +308,7 @@ describe('full backup and restore', () => {
     expect(p.messages.filter((m) => m.severity === 'error')).toEqual([]);
     expect(p).toMatchObject({ mode: 'replace', canApply: true, confirmationWord: 'RESTORE' });
     expect(p.current.items.movie).toBe(1);
-    expect(p.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1 });
+    expect(p.incoming.items).toEqual({ movie: 1, tv: 1, game: 1, book: 1, anime: 0 });
     expect(() => other.backup.applyRestore(p.token, 'yes')).toThrow(/Type RESTORE/);
     const r = other.backup.applyRestore(p.token, 'RESTORE');
     expect(r.snapshotLabel).toMatch(/^pre-restore-.*\.mpbackup$/);
@@ -322,6 +322,22 @@ describe('full backup and restore', () => {
     expect(other.custom.layouts().dashboard[0]?.id).toBe('tags');
     expect(other.library.query({ ...await_default(), text: 'replaced' }).total).toBe(0);
     expect(other.library.query({ ...await_default(), text: 'statues' }).total).toBe(1); // FTS present
+  });
+
+  it('a restored backup gets a fresh sync identity with sync turned off', () => {
+    seed(env);
+    env.dbm.db.run(
+      "INSERT INTO sync_state (key, value) VALUES ('device_id', '11111111-1111-4111-8111-111111111111')",
+    );
+    env.dbm.db.run(
+      `INSERT INTO settings (key, value) VALUES ('sync', '{"enabled":true,"folder":"C:/elsewhere","deviceName":"Old"}')`,
+    );
+    const file = join(env.dir, 'sync.mpbackup');
+    env.backup.createBackup(file, { overwrite: false });
+    const p = other.backup.previewRestore(file);
+    other.backup.applyRestore(p.token, 'RESTORE');
+    expect(other.dbm.db.all('SELECT * FROM sync_state')).toEqual([]);
+    expect(other.dbm.db.get("SELECT value FROM settings WHERE key = 'sync'")).toBeUndefined();
   });
 
   it('pre-restore snapshot can itself be restored (undo)', () => {

@@ -4,6 +4,15 @@
  * the renderer only type-guards the `Result` envelope.
  */
 import type {
+  AudioPref,
+  AvailabilityKind,
+  ServiceKind,
+  HoursSource,
+  MoodColor,
+  MoodIcon,
+  RelationInput,
+  SpoilerMode,
+  ArtworkSlot,
   ArtworkSource,
   CustomFieldType,
   GameScheme,
@@ -146,7 +155,9 @@ export interface ExternalLinkView {
     | 'igdb'
     | 'wikidata'
     | 'anilist'
-    | 'mal';
+    | 'mal'
+    | 'kitsu'
+    | 'streaming';
   label: string;
   url: string;
 }
@@ -283,6 +294,11 @@ export interface ProviderInfo {
   cachingPolicy: 'cache-allowed' | 'remote-only';
   rateLimitText: string;
   signupUrl: string | null;
+  termsNote: string | null;
+  /** 'art' = Artwork Picker source only (no metadata search). */
+  kind: 'metadata' | 'art';
+  /** Optional per-field label overrides (e.g. fanart.tv "Personal key"). */
+  keyLabels: Partial<Record<'apiKey' | 'clientId' | 'clientSecret', string>>;
 }
 
 export interface SearchHitView {
@@ -653,7 +669,7 @@ export interface SourceDiffView {
 
 export interface ImportBatchView {
   id: string;
-  kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped';
+  kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped' | 'mal-xml';
   label: string;
   createdAt: string;
   undoneAt: string | null;
@@ -708,7 +724,7 @@ export interface MappingProfileView {
 }
 
 export interface TrackerPreviewView extends ImportPreviewView {
-  tracker: 'goodreads' | 'letterboxd' | 'csv';
+  tracker: 'goodreads' | 'letterboxd' | 'csv' | 'mal';
   /** For the generic mapper: header and first rows for the live preview. */
   header: string[];
   sample: string[][];
@@ -724,4 +740,285 @@ export interface CommandTarget {
   title: string;
   type: MediaType;
   year: number | null;
+}
+
+/* ---------------------------------------------------------------- Expansion Pack 2: artwork */
+
+export interface ArtworkSlotView {
+  slot: ArtworkSlot;
+  artworkId: string | null;
+  /** maybepile-art:// URL (never a raw remote URL). */
+  url: string | null;
+  thumbUrl: string | null;
+  origin: string | null;
+  attribution: string | null;
+  licenseNote: string | null;
+  width: number | null;
+  height: number | null;
+  language: string | null;
+  cacheState: 'cached' | 'remote-only' | 'unavailable' | null;
+  userSelected: boolean;
+  adult: boolean;
+}
+
+export interface ArtworkCandidateView {
+  /** Opaque token; the remote URL itself never reaches the renderer. */
+  token: string;
+  sourceId: string;
+  sourceName: string;
+  slot: ArtworkSlot;
+  thumbUrl: string;
+  previewUrl: string;
+  width: number | null;
+  height: number | null;
+  language: string | null;
+  attribution: string | null;
+  licenseNote: string | null;
+  cachePolicy: 'cache-allowed' | 'remote-only';
+  adult: boolean;
+}
+
+export interface ArtworkSourceStatus {
+  sourceId: string;
+  sourceName: string;
+  state: 'ok' | 'not-configured' | 'error' | 'not-applicable';
+  message: string | null;
+  count: number;
+}
+
+export interface ArtworkGallery {
+  itemId: string;
+  candidates: ArtworkCandidateView[];
+  sources: ArtworkSourceStatus[];
+}
+
+/* ---------------------------------------------------------------- Expansion Pack 2: features */
+
+export type { PileTimeEstimate, PileTimeTotals } from '../domain/pile-time';
+import type { PileTimeEstimate as PileTimeEstimateT } from '../domain/pile-time';
+export type { CurrencyTotals } from '../domain/value';
+export type { Recommendation, RecReason } from '../domain/recommendations';
+
+export interface MoodView {
+  id: string;
+  name: string;
+  icon: MoodIcon;
+  color: MoodColor | null;
+  hidden: boolean;
+  position: number;
+  builtin: boolean;
+  itemCount: number;
+}
+
+export interface ItemPrefsView {
+  spoilerMode: SpoilerMode;
+  notesSpoiler: boolean;
+  hoursSource: HoursSource;
+  audioPref: AudioPref | null;
+  /** Resolved: is the spoiler shield on for this item right now? */
+  shieldActive: boolean;
+}
+
+export interface RunView {
+  runNumber: number;
+  status: string;
+  dateStarted: string | null;
+  dateCompleted: string | null;
+  rating: number | null;
+  notes: string;
+  episodesWatched: number;
+  current: boolean;
+}
+
+export interface StreamingLinkView {
+  providerId: string;
+  service: string;
+  url: string;
+  subs: string[];
+  dubs: string[];
+  matchesPref: boolean;
+}
+
+export interface RelationView {
+  id: string;
+  otherItemId: string;
+  otherTitle: string;
+  otherType: string;
+  otherStatus: string;
+  /** Relation from this item's point of view (prequel = the other item is a prequel of this). */
+  relation: RelationInput | 'adapted_as';
+  origin: 'user' | 'provider';
+}
+
+export interface SuggestionView {
+  id: string;
+  providerId: string;
+  title: string;
+  year: number | null;
+  type: string;
+  relation: RelationInput | 'adapted_as';
+  targetItemId: string | null;
+}
+
+export interface FranchiseView {
+  id: string;
+  name: string;
+  respectOrder: boolean;
+  entries: {
+    itemId: string;
+    title: string;
+    type: string;
+    status: string;
+    position: number;
+    mainline: boolean;
+  }[];
+  nextItemId: string | null;
+}
+
+export interface PurchaseView {
+  id: string;
+  itemId: string;
+  amountMinor: number;
+  currency: string;
+  purchasedOn: string | null;
+  store: string | null;
+  edition: string | null;
+  notes: string | null;
+}
+
+export interface PurchaseInput {
+  amountMinor: number;
+  currency: string;
+  purchasedOn: string | null;
+  store: string | null;
+  edition: string | null;
+  notes: string | null;
+}
+
+export interface SessionView {
+  id: string;
+  itemId: string;
+  itemTitle: string;
+  kind: 'play' | 'watch' | 'read';
+  state: 'running' | 'paused' | 'done';
+  source: 'timer' | 'manual';
+  startedAt: string;
+  endedAt: string | null;
+  seconds: number;
+  note: string | null;
+  needsReview: boolean;
+}
+
+export interface ServiceView {
+  id: string;
+  name: string;
+  kind: ServiceKind;
+  active: boolean;
+  entryCount: number;
+}
+
+export interface AvailabilityView {
+  id: string;
+  itemId: string;
+  kind: AvailabilityKind;
+  serviceId: string | null;
+  serviceName: string | null;
+  platform: string | null;
+  availableUntil: string | null;
+  remindDays: number | null;
+  notes: string | null;
+}
+
+export interface LeavingSoonView extends AvailabilityView {
+  itemTitle: string;
+  itemType: string;
+  itemStatus: string;
+  daysLeft: number;
+}
+
+export interface AvailabilityInput {
+  kind: AvailabilityKind;
+  serviceId: string | null;
+  platform: string | null;
+  availableUntil: string | null;
+  remindDays: number | null;
+  notes: string | null;
+}
+
+export interface DuplicatePair {
+  a: { id: string; title: string; type: MediaType; year: number | null; status: Status };
+  b: { id: string; title: string; type: MediaType; year: number | null; status: Status };
+  reason: string;
+}
+
+export interface MergeFieldRow {
+  field: string;
+  label: string;
+  a: string | null;
+  b: string | null;
+}
+
+export interface MergePreview {
+  keepId: string;
+  removeId: string;
+  rows: MergeFieldRow[];
+  moves: string[];
+}
+
+export interface PileTimeRow {
+  id: string;
+  title: string;
+  type: MediaType;
+  status: Status;
+  estimate: PileTimeEstimateT;
+}
+
+export interface BulkAutoPickResult {
+  processed: number;
+  updated: number;
+  keptUserChoice: number;
+  noCandidates: number;
+  failed: number;
+  cancelled: boolean;
+}
+
+export interface HeatmapView {
+  year: number;
+  days: { date: string; count: number; titles: string[] }[];
+  total: number;
+  maxPerDay: number;
+}
+
+export interface AnimeSearchAllView {
+  hits: (SearchHitView & { alsoOn: string[] })[];
+  failures: { providerId: string; message: string }[];
+}
+
+/* ---------------------------------------------------------------- Expansion Pack 2: sync */
+
+export interface SyncStatusView {
+  enabled: boolean;
+  folderLabel: string | null;
+  deviceId: string;
+  deviceName: string;
+  otherDevices: { deviceId: string; deviceName: string; lastSeq: number; readSeq: number }[];
+  openConflicts: number;
+}
+
+export interface SyncPreviewView {
+  outgoing: number;
+  incoming: { apply: number; creates: number; deletes: number; noop: number };
+  conflicts: { key: string; title: string; field: string; local: string; remote: string; device: string }[];
+  warnings: string[];
+}
+
+export interface SyncConflictView {
+  id: string;
+  itemId: string | null;
+  itemTitle: string;
+  field: string;
+  local: string;
+  remote: string;
+  remoteDevice: string;
+  remoteAt: string;
 }

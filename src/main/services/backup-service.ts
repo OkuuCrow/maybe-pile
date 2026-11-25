@@ -338,6 +338,13 @@ export class BackupService {
         if (staged.foreignKeyViolations() > 0)
           throw appError('CORRUPT', 'The backup database has broken references.');
         incoming = libraryCounts(staged);
+        // A restored library must not reuse the source machine's sync identity: two
+        // devices with one device id would write the same log file. Sync starts off.
+        staged.transaction(() => {
+          for (const t of ['sync_state', 'sync_cursors', 'sync_baseline', 'sync_conflicts'])
+            staged.run(`DELETE FROM ${t}`);
+          staged.run("DELETE FROM settings WHERE key = 'sync'");
+        });
         staged.checkpoint();
       } finally {
         staged.close();

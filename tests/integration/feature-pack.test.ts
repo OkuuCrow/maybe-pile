@@ -422,7 +422,7 @@ describe('Stats service', () => {
     expect(csv).toBe('genre,completed\r\nHorror,1\r\n');
     expect(env.f.stats.yearInReview(2025).favorites[0]?.title).toBe('=SUM(A1)');
     const fav = env.f.stats.chartCsv('completedByMonth', 2025, false);
-    expect(fav.split('\r\n')[1]).toBe('2025-03,0,0,0,1,1');
+    expect(fav.split('\r\n')[1]).toBe('2025-03,0,0,0,1,0,1');
   });
 
   it('stays responsive at 10k items / 100k history rows', () => {

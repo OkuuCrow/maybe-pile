@@ -1,16 +1,29 @@
 /**
- * AniList — anime (as TV shows or movies) and manga/light novels (as books).
+ * AniList — anime, plus anime-as-TV/movie and manga/light novels as books.
  * Public GraphQL API, no key needed for read-only queries: https://docs.anilist.co/
- * Rate limit: documented 90 req/min (temporarily reduced to 30/min at times);
- * 429 responses include Retry-After, which the shared client honours.
- * Free for non-commercial use. Artwork is remote-only (shown from AniList's CDN).
+ * Rate limit: documented 90 req/min (degraded to 30/min at times, checked
+ * 2026-11-24); 429 responses include Retry-After, which the shared client honours.
+ *
+ * TERMS (see docs/providers.md): free for non-commercial use, but the terms
+ * prohibit use "within competing, non-complementary services of the same
+ * nature … This includes … anime and manga list or tracker services", and
+ * prohibit backup/data-storage use. Maybe Pile is a personal backlog tracker,
+ * so AniList is OFF by default and the clause is shown in Settings; the user
+ * decides. Artwork is remote-only (shown from AniList's CDN, never cached).
  */
 import { z } from 'zod';
 import type { MediaType } from '../shared/enums';
 import type { SeasonInput } from '../shared/schemas';
+import {
+  buildAnimeSeasons,
+  normalizeAiringStatus,
+  normalizeAnimeFormat,
+  normalizeAnimeSeason,
+  normalizeSource,
+} from '../domain/anime';
 import { requestJson } from './http';
 import { cleanText, finalizeMeta, looseArray, looseNumber, looseString, safeUrl } from './common';
-import type { MetadataProvider, ProviderContext, SearchHit } from './types';
+import type { MetadataProvider, ProviderContext, ProviderRelation, SearchHit } from './types';
 
 const API = 'https://graphql.anilist.co';
 const IMG_HOSTS = ['s4.anilist.co'];
@@ -19,7 +32,23 @@ const FORMATS: Record<MediaType, { type: 'ANIME' | 'MANGA'; formats: string[] } 
   tv: { type: 'ANIME', formats: ['TV', 'TV_SHORT', 'ONA', 'OVA', 'SPECIAL'] },
   movie: { type: 'ANIME', formats: ['MOVIE'] },
   book: { type: 'MANGA', formats: ['MANGA', 'NOVEL', 'ONE_SHOT'] },
+  anime: { type: 'ANIME', formats: ['TV', 'TV_SHORT', 'MOVIE', 'SPECIAL', 'OVA', 'ONA', 'MUSIC'] },
   game: null,
+};
+
+const RELATION_MAP: Record<string, ProviderRelation['relation']> = {
+  PREQUEL: 'prequel',
+  SEQUEL: 'sequel',
+  SPIN_OFF: 'spin_off',
+  SIDE_STORY: 'side_story',
+  SOURCE: 'adaptation_of',
+  ADAPTATION: 'adapted_as',
+  ALTERNATIVE: 'remake_of',
+  PARENT: 'same_franchise',
+  SUMMARY: 'same_franchise',
+  COMPILATION: 'same_franchise',
+  CONTAINS: 'same_franchise',
+  OTHER: 'same_franchise',
 };
 
 const FuzzyDate = z.object({ year: looseNumber, month: looseNumber, day: looseNumber }).nullish();
@@ -28,6 +57,7 @@ const MediaCore = z.object({
   id: z.number().int(),
   idMal: looseNumber,
   format: looseString,
+  isAdult: z.boolean().nullish(),
   title: z.object({ romaji: looseString, english: looseString, native: looseString }),
   startDate: FuzzyDate,
   coverImage: z.object({ large: looseString, extraLarge: looseString }).nullish(),
@@ -38,19 +68,39 @@ const SearchSchema = z.object({
   data: z.object({ Page: z.object({ media: looseArray(MediaCore) }) }),
 });
 
+const RelationEdge = z.object({
+  relationType: looseString,
+  node: z.object({
+    id: z.number().int(),
+    type: looseString,
+    format: looseString,
+    title: z.object({ romaji: looseString, english: looseString, native: looseString }),
+    startDate: FuzzyDate,
+  }),
+});
+
 const DetailSchema = z.object({
   data: z.object({
     Media: MediaCore.extend({
       synonyms: looseArray(z.string()),
       endDate: FuzzyDate,
       status: looseString,
+      season: looseString,
+      seasonYear: looseNumber,
+      source: looseString,
       episodes: looseNumber,
       duration: looseNumber,
       chapters: looseNumber,
       volumes: looseNumber,
       genres: looseArray(z.string()),
       siteUrl: looseString,
-      studios: z.object({ nodes: looseArray(z.object({ name: looseString })) }).nullish(),
+      bannerImage: looseString,
+      nextAiringEpisode: z.object({ airingAt: looseNumber, episode: looseNumber }).nullish(),
+      studios: z
+        .object({
+          nodes: looseArray(z.object({ name: looseString, isAnimationStudio: z.boolean().nullish() })),
+        })
+        .nullish(),
       staff: z
         .object({
           edges: looseArray(
@@ -58,14 +108,15 @@ const DetailSchema = z.object({
           ),
         })
         .nullish(),
+      relations: z.object({ edges: looseArray(RelationEdge) }).nullish(),
     }).nullable(),
   }),
 });
 
-const SEARCH_QUERY = `query ($search: String, $type: MediaType, $formats: [MediaFormat]) {
+const SEARCH_QUERY = `query ($search: String, $type: MediaType, $formats: [MediaFormat], $adult: Boolean) {
   Page(perPage: 20) {
-    media(search: $search, type: $type, format_in: $formats, isAdult: false, sort: SEARCH_MATCH) {
-      id idMal format title { romaji english native } startDate { year month day }
+    media(search: $search, type: $type, format_in: $formats, isAdult: $adult, sort: SEARCH_MATCH) {
+      id idMal format isAdult title { romaji english native } startDate { year month day }
       coverImage { large extraLarge } description(asHtml: false)
     }
   }
@@ -73,11 +124,13 @@ const SEARCH_QUERY = `query ($search: String, $type: MediaType, $formats: [Media
 
 const DETAIL_QUERY = `query ($id: Int) {
   Media(id: $id) {
-    id idMal format title { romaji english native } synonyms description(asHtml: false)
-    startDate { year month day } endDate { year month day } status episodes duration chapters volumes
-    genres siteUrl coverImage { large extraLarge }
-    studios(isMain: true) { nodes { name } }
+    id idMal format isAdult title { romaji english native } synonyms description(asHtml: false)
+    startDate { year month day } endDate { year month day } status season seasonYear source
+    episodes duration chapters volumes genres siteUrl bannerImage coverImage { large extraLarge }
+    nextAiringEpisode { airingAt episode }
+    studios(isMain: true) { nodes { name isAnimationStudio } }
     staff(perPage: 8, sort: RELEVANCE) { edges { role node { name { full } } } }
+    relations { edges { relationType node { id type format title { romaji english native } startDate { year } } } }
   }
 }`;
 
@@ -104,10 +157,15 @@ function post(ctx: ProviderContext, query: string, variables: Record<string, unk
 const titleOf = (t: { romaji: string | null; english: string | null; native: string | null }) =>
   t.english ?? t.romaji ?? t.native ?? '';
 
+const posInt = (n: number | null) => (n !== null && Number.isInteger(n) && n > 0 ? n : null);
+
+export const ANILIST_TERMS_NOTE =
+  'AniList\'s API terms prohibit use in "anime and manga list or tracker services" and as a backup or data-storage service. Maybe Pile is a personal backlog tracker, so this source is off by default. Turn it on only if you\'ve read the terms (docs.anilist.co) and are comfortable with them.';
+
 export const anilistProvider: MetadataProvider = {
   id: 'anilist',
   displayName: 'AniList',
-  supports: ['tv', 'movie', 'book'],
+  supports: ['anime', 'tv', 'movie', 'book'],
   attribution: {
     text: 'Anime and manga data from AniList (anilist.co).',
     url: 'https://anilist.co/',
@@ -116,6 +174,8 @@ export const anilistProvider: MetadataProvider = {
   requiresApiKey: false,
   keyFields: [],
   signupUrl: null,
+  enabledByDefault: false,
+  termsNote: ANILIST_TERMS_NOTE,
   rateLimit: { maxRequests: 25, perMs: 60_000 },
   cachingPolicy: 'remote-only',
   artworkHosts: IMG_HOSTS,
@@ -127,19 +187,32 @@ export const anilistProvider: MetadataProvider = {
     const r = await requestJson(
       ctx.http,
       ctx.limiter,
-      post(ctx, SEARCH_QUERY, { search: q.query, type: f.type, formats: f.formats }),
+      post(ctx, SEARCH_QUERY, {
+        search: q.query,
+        type: f.type,
+        formats: f.formats,
+        // `isAdult: false` excludes adult titles; omitting the filter (null) includes both.
+        adult: q.includeAdult ? null : false,
+      }),
       SearchSchema,
     );
     if (r.kind !== 'ok') return r;
-    let hits = r.value.data.Page.media.map<SearchHit>((m) => ({
-      ref: { providerId: 'anilist', id: String(m.id), type: q.type },
-      title: titleOf(m.title) || '(untitled)',
-      year: m.startDate?.year ? Math.round(m.startDate.year) : null,
-      type: q.type,
-      creators: [m.format ?? ''].filter(Boolean).map((x) => x.replace(/_/g, ' ')),
-      synopsis: cleanText(m.description, 280, true),
-      thumbUrl: safeUrl(m.coverImage?.large ?? null, IMG_HOSTS),
-    }));
+    let hits = r.value.data.Page.media
+      .filter((m) => q.includeAdult || m.isAdult !== true)
+      .map<SearchHit>((m) => ({
+        ref: { providerId: 'anilist', id: String(m.id), type: q.type },
+        title: titleOf(m.title) || '(untitled)',
+        year: m.startDate?.year ? Math.round(m.startDate.year) : null,
+        type: q.type,
+        creators: [m.format ?? ''].filter(Boolean).map((x) => x.replace(/_/g, ' ')),
+        synopsis: cleanText(m.description, 280, true),
+        thumbUrl: safeUrl(m.coverImage?.large ?? null, IMG_HOSTS),
+        crossIds: {
+          anilist: String(m.id),
+          ...(posInt(m.idMal) ? { mal: String(m.idMal) } : {}),
+        },
+        adult: m.isAdult === true,
+      }));
     if (q.year) hits = [...hits.filter((h) => h.year === q.year), ...hits.filter((h) => h.year !== q.year)];
     return { kind: 'ok', value: hits };
   },
@@ -167,7 +240,17 @@ export const anilistProvider: MetadataProvider = {
         .trim(),
       name: e.node.name.full ?? '',
     }));
+    const studios = (m.studios?.nodes ?? [])
+      .filter((s) => s.isAnimationStudio !== false)
+      .map((s) => s.name)
+      .filter((n): n is string => Boolean(n));
     // Only main credits: AniList staff roles include many assistants ("Animation Director", "Art (assistant)").
+    const directors = staff
+      .filter((s) => s.role === 'director')
+      .map((s) => ({ name: s.name, role: 'director' as const }));
+    const originals = staff
+      .filter((s) => /^original (creator|story)$/.test(s.role))
+      .map((s) => ({ name: s.name, role: 'creator' as const }));
     const creators =
       ref.type === 'book'
         ? [
@@ -178,59 +261,79 @@ export const anilistProvider: MetadataProvider = {
               .filter((s) => s.role === 'art')
               .map((s) => ({ name: s.name, role: 'illustrator' as const })),
           ]
-        : [
-            ...staff
-              .filter((s) => s.role === 'director')
-              .map((s) => ({ name: s.name, role: 'director' as const })),
-            ...staff
-              .filter((s) => /^original (creator|story)$/.test(s.role))
-              .map((s) => ({ name: s.name, role: 'creator' as const })),
-          ];
-    const status =
-      m.status === 'FINISHED' || m.status === 'CANCELLED'
+        : ref.type === 'anime'
+          ? [...studios.map((name) => ({ name, role: 'studio' as const })), ...directors, ...originals]
+          : [...directors, ...originals];
+    const airing = normalizeAiringStatus(m.status);
+    const showStatus =
+      airing === 'finished' || airing === 'cancelled'
         ? 'ended'
-        : m.status === 'RELEASING' || m.status === 'NOT_YET_RELEASED'
+        : airing === 'releasing' || airing === 'not_yet_released'
           ? 'returning'
           : 'unknown';
+    const episodic = ref.type === 'tv' || ref.type === 'anime';
+    const next = m.nextAiringEpisode;
+    const nextAt =
+      next?.airingAt && Number.isFinite(next.airingAt) ? new Date(next.airingAt * 1000).toISOString() : null;
+    const isAnime = ref.type === 'anime';
     const meta = finalizeMeta(ref.type, {
       title,
       altTitles: alt.slice(0, 8),
       description: cleanText(m.description, 20_000, true),
       releaseDate: fuzzyToPartial(m.startDate),
-      lastAirDate: ref.type === 'tv' ? fuzzyToPartial(m.endDate) : null,
+      lastAirDate: episodic ? fuzzyToPartial(m.endDate) : null,
       genres: m.genres,
       creators,
       externalIds: [
         { kind: 'anilist', value: String(m.id) },
-        ...(m.idMal && Number.isInteger(m.idMal) && m.idMal > 0
-          ? [{ kind: 'mal' as const, value: String(m.idMal) }]
-          : []),
+        ...(posInt(m.idMal) ? [{ kind: 'mal' as const, value: String(m.idMal) }] : []),
       ],
-      network: ref.type === 'tv' ? (m.studios?.nodes[0]?.name ?? null) : null,
-      showStatus: ref.type === 'tv' ? status : null,
-      episodeRuntime: ref.type === 'tv' ? m.duration : null,
+      network: ref.type === 'tv' ? (studios[0] ?? null) : null,
+      showStatus: episodic ? showStatus : null,
+      episodeRuntime: episodic ? m.duration : null,
       runtimeMinutes: ref.type === 'movie' ? m.duration : null,
+      ...(isAnime
+        ? {
+            titleRomaji: m.title.romaji,
+            titleEnglish: m.title.english,
+            titleNative: m.title.native,
+            animeFormat: normalizeAnimeFormat(m.format),
+            airingStatus: airing,
+            animeSeason: normalizeAnimeSeason(m.season),
+            seasonYear: posInt(m.seasonYear),
+            sourceMaterial: normalizeSource(m.source),
+            episodeCount: posInt(m.episodes),
+            nextEpisode: posInt(next?.episode ?? null),
+            nextAiringAt: nextAt,
+            isAdult: m.isAdult === true,
+          }
+        : {}),
     });
     if (!meta) return { kind: 'malformedResponse', detail: 'Missing title.' };
-    // Anime: a single season with numbered episodes when the count is known.
-    const seasons: SeasonInput[] = [];
-    if (ref.type === 'tv') {
-      const count =
-        m.episodes !== null && Number.isInteger(m.episodes) && m.episodes > 0 && m.episodes <= 2000
-          ? m.episodes
-          : null;
-      seasons.push({
-        number: 1,
-        title: null,
-        episodeCountKnown: count,
-        episodes: Array.from({ length: count ?? 0 }, (_, i) => ({
-          number: i + 1,
-          title: null,
-          airDate: null,
-          runtime: m.duration !== null && Number.isInteger(m.duration) ? m.duration : null,
-        })),
-      });
+    const seasons: SeasonInput[] = episodic
+      ? buildAnimeSeasons({
+          total: m.episodes,
+          // Ongoing: the next airing episode number minus one have aired.
+          aired: next?.episode ? next.episode - 1 : null,
+          runtime: m.duration,
+        })
+      : [];
+    const relations: ProviderRelation[] = [];
+    if (isAnime) {
+      for (const e of m.relations?.edges ?? []) {
+        const rel = e.relationType ? RELATION_MAP[e.relationType] : undefined;
+        if (!rel || e.node.type !== 'ANIME') continue;
+        const t = titleOf(e.node.title);
+        if (!t) continue;
+        relations.push({
+          relation: rel,
+          ref: { providerId: 'anilist', id: String(e.node.id), type: 'anime' },
+          title: t,
+          year: posInt(e.node.startDate?.year ?? null),
+        });
+      }
     }
+    const banner = safeUrl(m.bannerImage, IMG_HOSTS);
     return {
       kind: 'ok',
       value: {
@@ -239,6 +342,8 @@ export const anilistProvider: MetadataProvider = {
         seasons,
         artworkUrl: safeUrl(m.coverImage?.extraLarge ?? m.coverImage?.large ?? null, IMG_HOSTS),
         sourceUrl: safeUrl(m.siteUrl, ['anilist.co']),
+        relations: relations.slice(0, 40),
+        extraArt: banner ? [{ slot: 'banner', url: banner }] : [],
       },
     };
   },

@@ -13,9 +13,12 @@ These were researched in November 2026; terms change, so re-check them before sh
 | **Open Library** | Books | none | 1 req / 1.1 s (unidentified clients: 1/s) | Cached | "Book data and covers from Open Library (openlibrary.org)." |
 | **IGDB** | Games, store IDs | Twitch client ID + secret (client-credentials OAuth) | 4 req / s | **Remote-only** (caching terms unverified) | "Game data provided by IGDB.com." |
 | **Wikidata** | Movies, TV, games, books | none | 10 req / 2 s | No artwork (Wikidata images are rarely covers) | "Data from Wikidata, available under CC0 (public domain)." |
-| **AniList** | Anime (TV, movies), manga and light novels (books) | none | 25 req / min (documented 90/min, sometimes reduced to 30/min) | **Remote-only** | "Anime and manga data from AniList (anilist.co)." |
+| **AniList** | Anime (TV, movies), manga and light novels (books) | none | 25 req / min (documented 90/min, sometimes reduced to 30/min) | **Remote-only** | "Anime and manga data from AniList (anilist.co)."  **Off by default since 2.0** (terms; see below). |
+| **Kitsu** (2.0) | Anime | none | 30 req / min | **Remote-only** | "Anime data from Kitsu (kitsu.app)." |
+| **MyAnimeList API v2** (2.0) | Anime | your own client ID | 30 req / min | **Remote-only** | "Anime data from MyAnimeList." |
+| **Jikan** (2.0) | Anime | none | 50 req / min | **Remote-only** | "…via the unofficial Jikan API." **Off by default.** |
 
-**Every media type has at least one keyless source** (tested): movies → Wikidata, AniList; TV → TVmaze, Wikidata, AniList; games → Wikidata; books → Open Library, Wikidata, AniList. In the Add dialog the default source for a type is the first *ready* provider in this order: TMDB, TVmaze, Open Library, Wikidata, AniList, IGDB, so keyless sources are used automatically until you add keys.
+**Every media type has at least one keyless source** (tested): movies → Wikidata; TV → TVmaze, Wikidata; games → Wikidata; books → Open Library, Wikidata; anime → Kitsu (AniList and Jikan are off by default since 2.0). In the Add dialog the default source for a type is the first *ready, enabled* provider in this order: TMDB, TVmaze, Open Library, Wikidata, Kitsu, MyAnimeList, AniList, Jikan, IGDB, so keyless sources are used automatically until you add keys.
 
 - **Wikidata** uses the documented MediaWiki Action API (`wbsearchentities`, `wbgetentities`). Search results are filtered to the requested type by *instance of* (P31) classes, with the item description as a fallback. Details map release date (earliest P577/P580, at the stated precision), directors/writers/cast, creators, developers/publishers, authors/illustrators/translators, genres, network, runtime (P2047), page count (P1104), ISBNs (P212/P957), and **exact identifiers**: IMDb (P345), TMDB (P4947 movie, P4983 TV), Steam app ID (P1733, which powers the Steam store link), AniList (P8729/P8731) and MyAnimeList (P4086/P4087). Wikidata has no season/episode lists; refresh a show from TVmaze for those.
 - **AniList** uses its public GraphQL API (`https://graphql.anilist.co`, read-only queries need no token). Anime TV formats map to TV shows (one season with numbered episodes when the count is known), anime movies to movies, and manga/light novels to books. Only main credits are kept (director, original creator, "Story & Art" author, illustrator). Adult entries are excluded. Free for non-commercial use.
@@ -110,3 +113,54 @@ Read on 23 November 2026 from the official pages. Valve's [Steam Web API Terms o
 2. Add its `kind` to the `library_sources.kind` CHECK in a **new** migration, and to `import_batches.kind` if it gets its own batch kind.
 3. Wire it in `createFeatureServices` (`src/main/services/feature-services.ts`) and in `LibrarySourceService` (configuration, fetch job). Add its host to `OUTBOUND_HOSTS` and the [security](security.md#network) network list.
 4. Write mock-based tests like `tests/integration/steam-import.test.ts`: success, auth failure, 429, malformed/partial data, large libraries.
+
+
+## Expansion Pack 2 (2.0): anime and artwork sources
+
+### Terms review (checked 24 Nov 2026)
+
+Each source was checked on the date above. Where a site could be fetched, we read it live. Where it was script-rendered, we used saved copies of the documentation pages supplied by the maintainer. Where terms were unreadable or silent, we chose the conservative option and say so here.
+
+| Source | What was checked | Findings | What we apply |
+| --- | --- | --- | --- |
+| **AniList** | API docs and terms (GitHub docs, `master`) | 90 req/min (temporarily degraded to 30/min). 429 responses include Retry-After. Free for non-commercial use. Prohibits "backup or data storage service" and "hoarding or mass collection". Also prohibits use "within competing, non-complementary services of the same nature… This includes… anime and manga list or tracker services". Attribution and image caching are not covered. | **Off by default for every type.** The clause is summarized in Settings → Providers, and the user decides. 25 req/min. Remote-only images. No bulk or background calls: only explicit search, import or refresh. |
+| **Kitsu** | Apiary API docs (saved copy) | JSON:API at `kitsu.io/api/edge`. Public GETs need no auth, and unauthenticated calls exclude NSFW. `page[limit]` max 20. Provides `mappings` (MAL/AniList IDs), `mediaRelationships`, `episodes`, and `streamingLinks` with `subs`/`dubs` arrays. **No published rate limit, terms, attribution or caching rules.** | **Default anime source.** 30 req/min client-side. Remote-only images. NSFW also filtered locally. Pagination links are never followed off the documented host. Streaming links are shown only when their host is on the streaming allowlist. |
+| **MyAnimeList API v2** | API License and Developer Agreement (2019); v2 reference | A client ID must not be shared, so none is bundled. Client-side storage only as long as reasonably necessary. No scraping. Non-commercial use OK. | **User-supplied client ID only:** stored with `safeStorage`, sent only as the `X-MAL-CLIENT-ID` header. NSFW `gray`/`black` count as adult. Remote-only. 30 req/min. |
+| **Jikan v4** | API docs (saved copy); `jikan.moe/terms` returned **HTTP 404** | Unofficial, describes itself as scraping MyAnimeList, not affiliated with MAL. 60 req/min and 3 req/s. 24 h server cache; ETag support; read-only. No terms page. | **Off by default and flagged** (Maybe Pile's rule is no scraping; see product decisions). 50 req/min. `sfw=true` unless adult titles are enabled. Remote-only. |
+| **fanart.tv** | API v3 docs (saved copy) | Personal `client_key` and/or project `api_key`. 429 with Retry-After. Images carry a copyright credit; documented `/preview/` thumbnails. **Caching is not addressed.** | **User keys only; no embedded project key.** Keys go in the `client-key` / `api-key` headers, never in URLs. Credit shown per image. Remote-only. 20 req/min. Covers movies (TMDB/IMDb IDs) and anime movies. **TV is not offered:** its endpoints need TheTVDB IDs, which Maybe Pile does not store. |
+| **SteamGridDB** | OpenAPI spec v2.10.0 (`/static/openapi.yml`, downloaded); terms page | `Authorization: Bearer <key>` from the user's profile. Endpoints for games by Steam ID, autocomplete search, and grids/heroes/logos/icons. `nsfw`/`humor`/`epilepsy` filters. Each image has an author. **No rate limits in the spec; the terms page is script-rendered and could not be read.** | User key only (Bearer header). `nsfw=false`. Author credit per image. 20 req/min. Remote-only. Image hosts are allowlisted to `cdn2.steamgriddb.com` and `cdn.steamgriddb.com` (from observed API behaviour, **unverified against a published list**); anything else is dropped. Never guesses between games: Steam ID first, then an exact normalized title. |
+| **TMDB images** | Existing TMDB review | 6-month cache cap; logo and notice required. | Same key and limiter as TMDB metadata. Remote-only. Image paths are validated (`/name.jpg`). |
+| **IGDB time-to-beat** | IGDB docs | `game_time_to_beats` endpoint (seconds: hastily/normally/completely). 4 req/s. | Only on an explicit "Get typical time from IGDB" click, with the user's Twitch credentials. Stored as a *provider* estimate that never overwrites the user's own. |
+
+**Excluded:** **AniDB** (out of scope per the brief) and **HowLongToBeat** (no API; scraping is not allowed). Time estimates come from IGDB and your own entries.
+
+### Outbound hosts added
+
+New outbound hosts:
+
+- Kitsu: `kitsu.io`, `media.kitsu.io`, `media.kitsu.app`
+- MyAnimeList: `api.myanimelist.net`, `cdn.myanimelist.net`, `api-cdn.myanimelist.net`
+- Jikan: `api.jikan.moe`
+- fanart.tv: `webservice.fanart.tv`, `assets.fanart.tv`
+- SteamGridDB: `www.steamgriddb.com`, `cdn2.steamgriddb.com`, `cdn.steamgriddb.com`
+- Open Library cover redirects only: `archive.org` and `*.us.archive.org`. On 24 Nov 2026 we observed `covers.openlibrary.org` → `archive.org` → `iaNNNNNN.us.archive.org`.
+
+The authoritative list is `OUTBOUND_HOSTS` in `src/providers/registry.ts`.
+
+### Anime source order and "All sources"
+
+Default order (Settings → Features → Anime): Kitsu, MyAnimeList, TMDB, AniList, Jikan.
+
+"All anime sources" queries every enabled, ready source in parallel. Hits that share any cross ID merge into one row; AniList, MAL and Kitsu IDs count, and matches chain transitively. The first source in your order wins, and the others show as "also on …". A failing source doesn't hide the others' results; its failure is named.
+
+### How to add an `ArtworkSource`
+
+1. Create `src/providers/<name>.ts` exporting an `ArtSource` (see `src/providers/art-types.ts`):
+   - Set `hosts` to the exact image hosts.
+   - Set `cachingPolicy` from the source's terms; use `remote-only` when unsure.
+   - Validate every URL with `safeUrl(url, HOSTS)`.
+   - Return a `ProviderResult` for expected failures instead of throwing.
+   - Put keys in request headers.
+2. Add it to `ART_SOURCES` in `src/providers/art-registry.ts`, and add its hosts to `OUTBOUND_HOSTS`. A test asserts that every art host is declared.
+3. Add fixture tests (see `tests/unit/pack2-providers.test.ts`) covering auth placement, dropping off-host URLs, NSFW handling and the not-configured state.
+4. Record the terms review, with its date, in the table above. Record any product choices in `product-decisions.md`.

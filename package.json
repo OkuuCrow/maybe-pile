@@ -1,7 +1,7 @@
 {
   "name": "maybe-pile",
   "productName": "Maybe Pile",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Someday, maybe. Now organized. A local-first desktop media backlog.",
   "private": true,
   "license": "MIT",

@@ -24,6 +24,7 @@ import type { ProviderService } from '../services/provider-service';
 import type { SecretsService } from '../services/secrets-service';
 import { MAX_IMPORT_BYTES } from '../services/portable-format';
 import { getProvider } from '../../providers/registry';
+import { getArtSource } from '../../providers/art-registry';
 import { checkOpenExternal } from '../security/policy';
 import type { Handlers } from './register';
 import type { AppSettings } from '../../shared/schemas';
@@ -36,6 +37,18 @@ import type { PileHealthService } from '../services/pile-health-service';
 import type { ReleaseRadarService } from '../services/release-radar-service';
 import type { StatsService } from '../services/stats-service';
 import type { TrackerImportService } from '../services/tracker-import-service';
+import type { ArtworkPickerService } from '../services/artwork-picker-service';
+import type { AvailabilityService } from '../services/availability-service';
+import type { ItemExtrasService } from '../services/item-extras-service';
+import type { MergeService } from '../services/merge-service';
+import type { SyncService } from '../services/sync-service';
+import type { MoodsService } from '../services/moods-service';
+import type { PileTimeService } from '../services/pile-time-service';
+import type { RecommendationsService } from '../services/recommendations-service';
+import type { SessionsService } from '../services/sessions-service';
+import type { ValueService } from '../services/value-service';
+import { igdbProvider, igdbTimeToBeat } from '../../providers/igdb';
+import { imageDimensions, sniffImage } from '../services/artwork-service';
 import { TRACKER_MAX_BYTES } from '../../domain/tracker-csv';
 import { defaultPersonal, emptyMeta } from '../../domain/metadata';
 import { localDate } from '../../domain/dates';
@@ -78,6 +91,17 @@ export interface HandlerDeps {
   batches: ImportBatchService;
   tracker: TrackerImportService;
   goals: GoalsService;
+  /* Expansion Pack 2 */
+  artworkPicker: ArtworkPickerService;
+  pileTime: PileTimeService;
+  moods: MoodsService;
+  extras: ItemExtrasService;
+  value: ValueService;
+  sessions: SessionsService;
+  availability: AvailabilityService;
+  recommendations: RecommendationsService;
+  merge: MergeService;
+  sync: SyncService;
   /** Called after settings change (main re-registers the Quick Capture shortcut). */
   onSettingsChanged?: (s: AppSettings) => void;
   appInfo: () => AppInfo;
@@ -276,6 +300,176 @@ export function buildHandlers(d: HandlerDeps): Handlers {
       );
     },
 
+    'stats:heatmap': ({ year }) => d.stats.heatmap(year),
+
+    /* ---------------------------------------------------------------- Expansion Pack 2 */
+    'artwork:slots': ({ itemId }) => d.artworkPicker.slots(itemId),
+    'artwork:gallery': ({ itemId }) => d.artworkPicker.gallery(itemId),
+    'artwork:choose': ({ itemId, token }) => d.artworkPicker.choose(itemId, token),
+    'artwork:revert': ({ itemId, slot }) => d.artworkPicker.revert(itemId, slot),
+    'artwork:clearSlot': ({ itemId, slot }) => d.artworkPicker.clear(itemId, slot),
+    'artwork:autoPick': async ({ itemId, slots }) => {
+      const r = await d.artworkPicker.autoPick(itemId, slots ?? undefined);
+      return { ...r, slots: d.artworkPicker.slots(itemId) };
+    },
+    'artwork:bulkAutoPick': ({ itemIds, slots }) => d.artworkPicker.bulkAutoPick(itemIds, slots ?? undefined),
+    'anime:searchAll': ({ query, year }) => d.providers.searchAllAnime(query, year),
+
+    'pileTime:item': ({ itemId }) => d.pileTime.forItem(itemId),
+    'pileTime:totals': () => d.pileTime.totals(),
+    'pileTime:fits': ({ budgetMinutes, types, moodIds }) => {
+      const rows = d.pileTime.fits(budgetMinutes, types, moodIds.length ? 500 : 50);
+      if (!moodIds.length) return rows;
+      const ok = d.moods.itemsWithMoods(moodIds);
+      return rows.filter((r) => ok.has(r.id)).slice(0, 50);
+    },
+    'pileTime:setManual': ({ itemId, minutes }) => d.pileTime.setManual(itemId, minutes),
+    'pileTime:fetchIgdb': async ({ itemId }) => {
+      const item = d.library.get(itemId);
+      if (item.type !== 'game')
+        throw appError('VALIDATION', 'Typical play time is only available for games.');
+      const igdbId = item.meta.externalIds.find((e) => e.kind === 'igdb')?.value;
+      if (!igdbId)
+        throw appError('VALIDATION', 'This game has no IGDB ID to look up.', {
+          recovery: 'Refresh it from IGDB or add the IGDB ID in the editor.',
+        });
+      const ctx = d.providers.sourceContext('igdb', igdbProvider.rateLimit);
+      const r = await igdbTimeToBeat(igdbId, ctx);
+      if (r.kind !== 'ok')
+        throw appError(
+          r.kind === 'notConfigured' ? 'PROVIDER_NOT_CONFIGURED' : 'PROVIDER_UNAVAILABLE',
+          r.kind === 'notConfigured'
+            ? 'IGDB needs a Twitch client ID and secret.'
+            : "IGDB couldn't provide a time estimate right now.",
+          { recovery: r.kind === 'notConfigured' ? 'Add them in Settings → Providers.' : 'Try again later.' },
+        );
+      if (!r.value)
+        throw appError('NOT_FOUND', 'IGDB has no time-to-beat data for this game yet.', {
+          recovery: 'Add your own estimate instead.',
+        });
+      d.pileTime.setProvider(itemId, r.value.minutes, 'igdb', r.value.detail);
+      return d.pileTime.forItem(itemId);
+    },
+
+    'moods:list': () => d.moods.list(),
+    'moods:create': (input) => d.moods.create(input),
+    'moods:update': (input) => d.moods.update(input),
+    'moods:delete': ({ id }) => d.moods.remove(id),
+    'moods:reorder': ({ ids }) => d.moods.reorder(ids),
+    'moods:forItem': ({ itemId }) => d.moods.forItem(itemId),
+    'moods:setForItem': ({ itemId, moodIds }) => d.moods.setForItem(itemId, moodIds),
+    'moods:bulk': ({ itemIds, moodId, add }) => ({ changed: d.moods.bulk(itemIds, moodId, add) }),
+
+    'itemExtras:prefs': ({ itemId }) => d.extras.prefs(itemId),
+    'itemExtras:setPrefs': ({ itemId, ...patch }) => d.extras.setPrefs(itemId, patch),
+    'itemExtras:runs': ({ itemId }) => d.extras.runs(itemId),
+    'itemExtras:updateRun': ({ itemId, runNumber, ...patch }) => d.extras.updateRun(itemId, runNumber, patch),
+    'itemExtras:streaming': ({ itemId }) => d.extras.streaming(itemId),
+    'itemExtras:relations': ({ itemId }) => d.extras.relations(itemId),
+    'itemExtras:addRelation': ({ itemId, otherId, relation }) =>
+      d.extras.addRelation(itemId, otherId, relation),
+    'itemExtras:removeRelation': ({ itemId, relationId }) => d.extras.removeRelation(itemId, relationId),
+    'itemExtras:suggestions': ({ itemId }) => d.extras.suggestions(itemId),
+    'itemExtras:resolveSuggestion': ({ itemId, suggestionId, accept }) =>
+      d.extras.resolveSuggestion(itemId, suggestionId, accept),
+    'itemExtras:franchisesForItem': ({ itemId }) => d.extras.franchisesForItem(itemId),
+
+    'franchises:list': () => d.extras.franchises(),
+    'franchises:get': ({ id }) => d.extras.franchise(id),
+    'franchises:create': ({ name, itemIds }) => d.extras.createFranchise(name, itemIds),
+    'franchises:update': ({ id, ...patch }) => d.extras.updateFranchise(id, patch),
+    'franchises:setEntries': ({ id, entries }) => d.extras.setEntries(id, entries),
+    'franchises:delete': ({ id }) => {
+      d.extras.deleteFranchise(id);
+      return null;
+    },
+
+    'value:list': ({ itemId }) => d.value.list(itemId),
+    'value:add': ({ itemId, purchase }) => d.value.add(itemId, purchase),
+    'value:update': ({ id, purchase }) => d.value.update(id, purchase),
+    'value:delete': ({ id }) => d.value.remove(id),
+    'value:summary': () => d.value.summary(),
+
+    'sessions:open': () => d.sessions.open(),
+    'sessions:forItem': ({ itemId }) => d.sessions.forItem(itemId),
+    'sessions:start': ({ itemId }) => d.sessions.start(itemId),
+    'sessions:pause': ({ id }) => d.sessions.pause(id),
+    'sessions:resume': ({ id }) => d.sessions.resume(id),
+    'sessions:stop': ({ id, adjustedSeconds, note }) => d.sessions.stop(id, adjustedSeconds, note),
+    'sessions:log': ({ itemId, startedAt, seconds, note }) =>
+      d.sessions.logManual(itemId, startedAt, seconds, note),
+    'sessions:edit': ({ id, ...patch }) => d.sessions.edit(id, patch),
+    'sessions:delete': ({ id }) => {
+      d.sessions.remove(id);
+      return null;
+    },
+
+    'availability:services': () => d.availability.services(),
+    'availability:addService': ({ name, kind }) => d.availability.addService(name, kind),
+    'availability:updateService': ({ id, ...patch }) => d.availability.updateService(id, patch),
+    'availability:removeService': ({ id }) => d.availability.removeService(id),
+    'availability:forItem': ({ itemId }) => d.availability.forItem(itemId),
+    'availability:add': ({ itemId, entry }) => d.availability.add(itemId, entry),
+    'availability:update': ({ id, entry }) => d.availability.update(id, entry),
+    'availability:delete': ({ id }) => d.availability.remove(id),
+    'availability:leavingSoon': () => d.availability.leavingSoon(),
+
+    'recs:list': ({ limit, types }) => d.recommendations.list(limit, types),
+    'recs:feedback': ({ itemId, kind }) => {
+      d.recommendations.feedback(itemId, kind);
+      return null;
+    },
+    'recs:clearFeedback': () => ({ cleared: d.recommendations.clearFeedback() }),
+
+    'merge:pairs': () => d.merge.findPairs(),
+    'merge:dismiss': ({ keepId, removeId }) => {
+      d.merge.dismiss(keepId, removeId);
+      return d.merge.findPairs();
+    },
+    'merge:preview': ({ keepId, removeId }) => d.merge.preview(keepId, removeId),
+    'merge:apply': ({ keepId, removeId, fields }) => d.merge.merge(keepId, removeId, { fields }),
+    'merge:lastUndoable': () => d.merge.lastUndoable(),
+    'merge:undo': ({ id }) => {
+      d.merge.undo(id);
+      return null;
+    },
+
+    'share:saveCard': async ({ name, pngBase64 }) => {
+      const png = new Uint8Array(Buffer.from(pngBase64, 'base64'));
+      // The card is drawn locally by the renderer; main re-checks it really is a sane PNG before writing.
+      if (png.byteLength > 6 * 1024 * 1024) throw appError('TOO_LARGE', 'That image is too large.');
+      const dims = sniffImage(png) === 'png' ? imageDimensions(png, 'png') : null;
+      if (!dims || dims.width > 4096 || dims.height > 4096)
+        throw appError('VALIDATION', 'The share card could not be created.');
+      return saveVia(
+        'Save share card',
+        `maybe-pile-${name}.png`,
+        [{ name: 'PNG image', extensions: ['png'] }],
+        () => png,
+      );
+    },
+
+    'sync:status': () => d.sync.status(),
+    'sync:chooseFolder': async () => {
+      const dir = await d.platform.folderDialog({
+        title: 'Choose a sync folder',
+        defaultPath: d.getExportDir(),
+      });
+      return dir ? d.sync.setFolder(dir) : null;
+    },
+    'sync:disable': () => d.sync.setFolder(null),
+    'sync:setDeviceName': ({ name }) => {
+      const st = d.sync.status();
+      return d.sync.setFolder(st.enabled ? st.folderLabel : null, name);
+    },
+    'sync:preview': () => d.sync.preview(),
+    'sync:apply': () => {
+      const r = d.sync.apply();
+      return r;
+    },
+    'sync:conflicts': () => d.sync.conflicts(),
+    'sync:resolve': ({ id, choice }) => d.sync.resolve(id, choice),
+
     'radar:upcoming': () => d.radar.upcoming(),
     'radar:refreshPreview': () => d.radar.refreshPreview(),
     'radar:refreshApply': ({ token, choices }) => d.radar.refreshApply(token, choices),
@@ -325,15 +519,19 @@ export function buildHandlers(d: HandlerDeps): Handlers {
       const filters =
         kind === 'letterboxd'
           ? [{ name: 'Letterboxd export (.zip or .csv)', extensions: ['zip', 'csv'] }]
-          : kind === 'goodreads'
-            ? [CSV_FILTER]
-            : [{ name: 'CSV / TSV', extensions: ['csv', 'tsv', 'txt'] }];
+          : kind === 'mal'
+            ? [{ name: 'MyAnimeList export (.xml or .xml.gz)', extensions: ['xml', 'gz'] }]
+            : kind === 'goodreads'
+              ? [CSV_FILTER]
+              : [{ name: 'CSV / TSV', extensions: ['csv', 'tsv', 'txt'] }];
       const title =
         kind === 'goodreads'
           ? 'Import Goodreads library'
           : kind === 'letterboxd'
             ? 'Import Letterboxd export'
-            : 'Import a CSV file';
+            : kind === 'mal'
+              ? 'Import MyAnimeList list'
+              : 'Import a CSV file';
       const path = await d.platform.openDialog({ title, filters });
       if (!path) return null;
       const bytes = readLimited(path, TRACKER_MAX_BYTES);
@@ -383,14 +581,15 @@ export function buildHandlers(d: HandlerDeps): Handlers {
     'providers:refreshPreview': ({ itemId }) => d.providers.refreshPreview(itemId),
     'providers:refreshApply': (p) => d.providers.refreshApply(p),
     'providers:setKey': ({ providerId, field, value }) => {
-      const p = getProvider(providerId);
-      if (!p || !p.keyFields.includes(field))
+      const p = getProvider(providerId) ?? getArtSource(providerId);
+      if (!p || !(p.keyFields as readonly string[]).includes(field))
         throw appError('VALIDATION', 'That provider does not use this kind of key.');
       d.secrets.set(providerId, field, value);
       return d.providers.list();
     },
     'providers:setEnabled': ({ providerId, enabled }) => {
-      if (!getProvider(providerId)) throw appError('VALIDATION', 'Unknown provider.');
+      if (!getProvider(providerId) && !getArtSource(providerId))
+        throw appError('VALIDATION', 'Unknown provider.');
       const current = d.custom.getSettings().providerEnabled;
       d.custom.patchSettings({ providerEnabled: { ...current, [providerId]: enabled } });
       return d.providers.list();

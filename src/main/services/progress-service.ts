@@ -8,6 +8,7 @@
  */
 import { type z } from 'zod';
 import { appError } from '../../shared/result';
+import { isEpisodic } from '../../shared/enums';
 import type {
   AddProgressInput,
   EditProgressInput,
@@ -219,7 +220,7 @@ export class ProgressService {
 
   toggleEpisodes(input: EpisodeToggleInput): MutationOutcome {
     const row = this.requireItem(input.itemId);
-    if (row.type !== 'tv') throw appError('VALIDATION', 'Episodes belong to TV shows only.');
+    if (!isEpisodic(row.type)) throw appError('VALIDATION', 'Episodes belong to TV shows and anime only.');
     const db = this.db;
     const eps = prog.episodesForItem(db, row.id, input.episodeIds);
     if (eps.length !== new Set(input.episodeIds).size)
@@ -296,7 +297,7 @@ export class ProgressService {
 
   upsertSeason(input: z.infer<typeof SeasonUpsertSchema>): MutationOutcome {
     const row = this.requireItem(input.itemId);
-    if (row.type !== 'tv') throw appError('VALIDATION', 'Seasons belong to TV shows only.');
+    if (!isEpisodic(row.type)) throw appError('VALIDATION', 'Seasons belong to TV shows and anime only.');
     const db = this.db;
     const clash = db.get<{ id: string }>('SELECT id FROM seasons WHERE item_id = ? AND season_number = ?', [
       row.id,

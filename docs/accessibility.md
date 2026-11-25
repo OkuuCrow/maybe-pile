@@ -62,3 +62,14 @@ A full manual keyboard-only and screen-reader pass by a person was **not** perfo
 - Library grid arrow-key navigation moves focus between item links. A full ARIA `grid` pattern (row/column semantics) isn't implemented; items are exposed as a list with position and set size.
 - The colour picker inputs (`<input type="color">`) rely on the OS picker's accessibility. A hex text field next to each one is the accessible alternative.
 - Toasts disappear after 5–10 seconds. Undo stays available for 10 seconds, and the same action (restore deleted items) isn't otherwise available after that.
+
+
+## Expansion Pack 2
+
+- **Artwork Picker:** slot tabs (`role=tab`, `aria-selected`) with counts. Candidates are buttons whose accessible names include source, size, language and an adult flag. Arrow keys move between them, Enter or Space previews, and selection is shown by a thick outline **and** `aria-pressed`. A per-source status list explains missing sources in text.
+- **Spoiler Shield:** hidden text is replaced by plain text and a labelled Reveal button, never only blurred or colored.
+- **Moods:** toggle buttons with `aria-pressed` and a ✓/+ glyph.
+- **Heatmap:** a grid with a focusable, labelled cell per active day, intensity shown with dots as well as color, and a **Show as table** alternative. Forced-colors styles are included.
+- **Session timer:** a labelled group. The readout isn't a live region (so it doesn't announce every second); the header link states the running or paused status and duration.
+- **Pile page:** every card is a labelled section; tables have captions and row headers.
+- **Tests:** `tests/ui/pack2.test.tsx` runs axe (WCAG 2.2 A/AA plus best practices, with contrast checked separately) on the Pile page, the item page panels, the Artwork Picker, Spoiler Shield, settings and the heatmap. All pass.

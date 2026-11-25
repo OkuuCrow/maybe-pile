@@ -36,7 +36,7 @@ export function LinksPanel({ item }: { item: ItemDetail }) {
   const [region, setRegion] = useState(app.settings?.region ?? 'US');
   const [watch, setWatch] = useState<WatchAvailability | null>(null);
   const [busy, setBusy] = useState(false);
-  const isScreen = item.type === 'movie' || item.type === 'tv';
+  const isScreen = item.type === 'movie' || item.type === 'tv' || item.type === 'anime';
 
   const check = async (r: string) => {
     setBusy(true);

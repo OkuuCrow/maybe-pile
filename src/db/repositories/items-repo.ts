@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { CustomFieldType, ExternalIdKind, MediaType, ProgressKind, Status } from '../../shared/enums';
-import { STATUSES } from '../../shared/enums';
+import { STATUSES, isEpisodic } from '../../shared/enums';
 import type {
   Creator,
   ExternalId,
@@ -86,6 +86,13 @@ export function pruneOrphans(db: Db): void {
 
 /* ------------------------------------------------------------------ writes */
 
+/** TV-model status derived from an anime airing status (Release Radar and progress use it). */
+export function showStatusForAiring(a: MetadataFields['airingStatus']): MetadataFields['showStatus'] {
+  if (a === 'finished' || a === 'cancelled') return 'ended';
+  if (a === 'releasing' || a === 'not_yet_released' || a === 'hiatus') return 'returning';
+  return null;
+}
+
 export function insertItemRow(
   db: Db,
   id: string,
@@ -118,7 +125,9 @@ export function insertItemRow(
     ],
   );
   if (type === 'movie') db.run('INSERT INTO movie_details (item_id) VALUES (?)', [id]);
-  if (type === 'tv') db.run('INSERT INTO tv_details (item_id) VALUES (?)', [id]);
+  // Anime reuses tv_details (episode runtime, last air date, derived show status) plus anime_details.
+  if (isEpisodic(type)) db.run('INSERT INTO tv_details (item_id) VALUES (?)', [id]);
+  if (type === 'anime') db.run('INSERT INTO anime_details (item_id) VALUES (?)', [id]);
   if (type === 'game') db.run('INSERT INTO game_details (item_id) VALUES (?)', [id]);
   if (type === 'book') db.run('INSERT INTO book_details (item_id) VALUES (?)', [id]);
 }
@@ -185,6 +194,33 @@ export function writeMeta(db: Db, id: string, type: MediaType, meta: MetadataFie
       db.run(
         'UPDATE tv_details SET network = ?, show_status = ?, episode_runtime = ?, last_air_date = ? WHERE item_id = ?',
         [meta.network, meta.showStatus, meta.episodeRuntime, meta.lastAirDate, id],
+      );
+      break;
+    case 'anime':
+      db.run(
+        'UPDATE tv_details SET network = NULL, show_status = ?, episode_runtime = ?, last_air_date = ? WHERE item_id = ?',
+        [showStatusForAiring(meta.airingStatus), meta.episodeRuntime, meta.lastAirDate, id],
+      );
+      db.run(
+        `UPDATE anime_details SET format = ?, airing_status = ?, season = ?, season_year = ?, source_material = ?,
+           episode_count = ?, episode_duration = ?, next_episode = ?, next_airing_at = ?, is_adult = ?,
+           title_romaji = ?, title_english = ?, title_native = ? WHERE item_id = ?`,
+        [
+          meta.animeFormat,
+          meta.airingStatus,
+          meta.animeSeason,
+          meta.seasonYear,
+          meta.sourceMaterial,
+          meta.episodeCount,
+          meta.episodeRuntime,
+          meta.nextEpisode,
+          meta.nextAiringAt,
+          b2i(meta.isAdult),
+          meta.titleRomaji,
+          meta.titleEnglish,
+          meta.titleNative,
+          id,
+        ],
       );
       break;
     case 'book':
@@ -366,14 +402,13 @@ export function loadProgressInputs(db: Db, id: string): Parameters<typeof summar
     item.type === 'movie'
       ? db.all<{ pass: number }>('SELECT pass FROM viewing_events WHERE item_id = ?', [id])
       : [];
-  const seasons = item.type === 'tv' ? loadSeasons(db, id) : [];
-  const tv =
-    item.type === 'tv'
-      ? db.get<{ show_status: MetadataFields['showStatus'] }>(
-          'SELECT show_status FROM tv_details WHERE item_id = ?',
-          [id],
-        )
-      : undefined;
+  const seasons = isEpisodic(item.type) ? loadSeasons(db, id) : [];
+  const tv = isEpisodic(item.type)
+    ? db.get<{ show_status: MetadataFields['showStatus'] }>(
+        'SELECT show_status FROM tv_details WHERE item_id = ?',
+        [id],
+      )
+    : undefined;
   const game =
     item.type === 'game'
       ? db.get<{ progress_scheme: PersonalFields['gameScheme'] }>(
@@ -573,7 +608,7 @@ export function loadMeta(db: Db, row: ItemRow): MetadataFields {
     meta.runtimeMinutes = d?.runtime_minutes ?? null;
     meta.originalLanguage = d?.original_language ?? null;
     meta.ageRating = d?.age_rating ?? null;
-  } else if (row.type === 'tv') {
+  } else if (isEpisodic(row.type)) {
     const d = db.get<{
       network: string | null;
       show_status: MetadataFields['showStatus'];
@@ -584,6 +619,12 @@ export function loadMeta(db: Db, row: ItemRow): MetadataFields {
     meta.showStatus = d?.show_status ?? null;
     meta.episodeRuntime = d?.episode_runtime ?? null;
     meta.lastAirDate = d?.last_air_date ?? null;
+    if (row.type === 'anime') {
+      // Anime keeps its own status vocabulary; network/showStatus stay null in metadata.
+      meta.network = null;
+      meta.showStatus = null;
+      Object.assign(meta, loadAnimeMeta(db, id));
+    }
   } else if (row.type === 'book') {
     const d = db.get<{
       isbn10: string | null;
@@ -601,6 +642,40 @@ export function loadMeta(db: Db, row: ItemRow): MetadataFields {
     meta.audioMinutes = d?.audio_minutes ?? null;
   }
   return meta;
+}
+
+interface AnimeRow {
+  format: MetadataFields['animeFormat'];
+  airing_status: MetadataFields['airingStatus'];
+  season: MetadataFields['animeSeason'];
+  season_year: number | null;
+  source_material: string | null;
+  episode_count: number | null;
+  next_episode: number | null;
+  next_airing_at: string | null;
+  is_adult: number;
+  title_romaji: string | null;
+  title_english: string | null;
+  title_native: string | null;
+}
+
+export function loadAnimeMeta(db: Db, id: string): Partial<MetadataFields> {
+  const a = db.get<AnimeRow>('SELECT * FROM anime_details WHERE item_id = ?', [id]);
+  if (!a) return {};
+  return {
+    animeFormat: a.format,
+    airingStatus: a.airing_status,
+    animeSeason: a.season,
+    seasonYear: a.season_year,
+    sourceMaterial: a.source_material,
+    episodeCount: a.episode_count,
+    nextEpisode: a.next_episode,
+    nextAiringAt: a.next_airing_at,
+    isAdult: i2b(a.is_adult),
+    titleRomaji: a.title_romaji,
+    titleEnglish: a.title_english,
+    titleNative: a.title_native,
+  };
 }
 
 export function loadCustomFields(db: Db, itemId: string): CustomFieldView[] {
@@ -751,7 +826,7 @@ export function loadDetail(db: Db, id: string): ItemDetail | null {
       name: s.name,
       position: s.position,
     })),
-    seasons: row.type === 'tv' ? loadSeasons(db, id) : [],
+    seasons: isEpisodic(row.type) ? loadSeasons(db, id) : [],
     milestones: row.type === 'game' ? loadMilestones(db, id) : [],
     progress: computeProgress(db, id),
     links: linksFromExternalIds(row.type, meta.externalIds),
@@ -987,6 +1062,7 @@ export function findDuplicates(
         'wikidata',
         'anilist',
         'mal',
+        'kitsu',
       ].includes(e.kind)
     )
       continue;

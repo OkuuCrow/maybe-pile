@@ -4,6 +4,7 @@
  * failure never leaves a half-created or half-updated item.
  */
 import type { MediaType, Status } from '../../shared/enums';
+import { isEpisodic } from '../../shared/enums';
 import { appError } from '../../shared/result';
 import type {
   BulkActionInput,
@@ -39,6 +40,7 @@ import {
   tagCounts,
 } from '../../db/repositories/catalog-repo';
 import { readSettings } from '../../db/repositories/config-repo';
+import * as runs from '../../db/repositories/runs-repo';
 import * as items from '../../db/repositories/items-repo';
 import * as prog from '../../db/repositories/progress-repo';
 import type { ServiceContext } from './context';
@@ -184,7 +186,7 @@ export class LibraryService {
       items.setSource(db, id, origin.providerId, origin.providerRef, origin.providerUrl ?? null, now);
     }
     if (origin.artworkId) db.run('UPDATE items SET artwork_id = ? WHERE id = ?', [origin.artworkId, id]);
-    if (type === 'tv' && seasons.length > 0)
+    if (isEpisodic(type) && seasons.length > 0)
       prog.insertSeasons(db, id, seasons, fromProvider ? 'provider' : 'user');
     if (type === 'game' && milestones.length > 0)
       prog.setMilestones(
@@ -286,14 +288,18 @@ export class LibraryService {
     );
     if (!plan.changed) return { item: this.get(row.id), suggestions: [], applied: [] };
     db.transaction(() => {
+      // Runs: make sure the finishing run reflects its final state before a new run starts.
+      runs.syncRuns(db, row.id, now);
+      if (plan.pass !== row.pass && isEpisodic(row.type)) runs.snapshotRunEpisodes(db, row.id, row.pass);
       db.run(
         'UPDATE items SET status = ?, date_started = ?, date_completed = ?, pass = ?, updated_at = ? WHERE id = ?',
         [plan.status, plan.dateStarted, plan.dateCompleted, plan.pass, now, row.id],
       );
-      if (plan.pass !== row.pass && row.type === 'tv') {
+      if (plan.pass !== row.pass && isEpisodic(row.type)) {
         // A new rewatch pass starts with fresh checkmarks; history keeps the earlier pass.
         prog.resetEpisodes(db, row.id);
       }
+      runs.syncRuns(db, row.id, now);
       if (input.fillRemaining && plan.offerFillRemaining)
         this.fillRemaining(row.id, row.type, plan.pass, now);
       this.leaveQueueIfDone(row.id, plan.status);
@@ -329,7 +335,7 @@ export class LibraryService {
       recordedAt: now,
       note: 'Filled when marked Completed',
     } as const;
-    if (type === 'tv') {
+    if (isEpisodic(type)) {
       const unwatched = db.all<{ id: string }>(
         `SELECT e.id FROM episodes e JOIN seasons s ON s.id = e.season_id WHERE e.item_id = ? AND s.season_number > 0 AND e.watched = 0`,
         [id],
@@ -562,7 +568,7 @@ export class LibraryService {
 
   dashboard(): DashboardData {
     const db = this.db;
-    const countsByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
+    const countsByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0, anime: 0 };
     for (const r of db.all<{ type: MediaType; n: number }>(
       'SELECT type, count(*) AS n FROM items WHERE deleted_at IS NULL GROUP BY type',
     )) {
@@ -783,7 +789,7 @@ export class LibraryService {
     const db = this.db;
     const year = this.ctx.clock.now().getFullYear();
     const from = `${year}-01-01`;
-    const completedByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
+    const completedByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0, anime: 0 };
     for (const r of db.all<{ type: MediaType; n: number }>(
       `SELECT type, count(*) AS n FROM items
        WHERE deleted_at IS NULL AND status = 'completed' AND date_completed >= ? GROUP BY type`,

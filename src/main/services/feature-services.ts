@@ -1,5 +1,5 @@
 /**
- * Wires the 1.2 feature-pack services. Used by main.ts and by the UI/integration
+ * Wires the 1.2 feature-pack and Expansion Pack 2 services. Used by main.ts and by the UI/integration
  * test harnesses so production and tests share exactly the same graph.
  */
 import type { HttpClient } from '../../providers/http';
@@ -20,6 +20,16 @@ import { ReleaseRadarService } from './release-radar-service';
 import type { SecretsService } from './secrets-service';
 import { StatsService } from './stats-service';
 import { TrackerImportService } from './tracker-import-service';
+import { ArtworkPickerService } from './artwork-picker-service';
+import { AvailabilityService } from './availability-service';
+import { ItemExtrasService } from './item-extras-service';
+import { MergeService } from './merge-service';
+import { MoodsService } from './moods-service';
+import { PileTimeService } from './pile-time-service';
+import { RecommendationsService } from './recommendations-service';
+import { SessionsService } from './sessions-service';
+import { ValueService } from './value-service';
+import { SyncService } from './sync-service';
 
 /** Conservative client-side limit for Steam (Valve allows 100,000 calls/day per key). */
 export const STEAM_RATE_LIMIT = { maxRequests: 10, perMs: 10_000, maxWaitMs: 15_000 };
@@ -50,13 +60,28 @@ export function createFeatureServices(ctx: ServiceContext, d: FeatureDeps) {
     enrich: (id) => d.providers.enrichEmptyFields(id),
     ...(d.sleep ? { sleep: d.sleep } : {}),
   });
+  const today = () => d.library.today();
+  const pileTime = new PileTimeService(ctx);
+  const extras = new ItemExtrasService(ctx);
   return {
+    /* ---- expansion pack 2 ---- */
+    artworkPicker: new ArtworkPickerService(ctx, d.providers.artwork, d.providers),
+    pileTime,
+    moods: new MoodsService(ctx),
+    extras,
+    value: new ValueService(ctx),
+    sessions: new SessionsService(ctx),
+    availability: new AvailabilityService(ctx, today),
+    recommendations: new RecommendationsService(ctx, extras, pileTime, today),
+    merge: new MergeService(ctx),
+    sync: new SyncService(ctx, d.library),
+    /* ---- 1.2 ---- */
     lists,
     batches,
     importer,
     sources,
     health: new PileHealthService(ctx),
-    pick: new PickService(ctx, d.library),
+    pick: new PickService(ctx, d.library, pileTime, extras),
     stats: new StatsService(ctx, d.timeZone),
     goals: new GoalsService(ctx, d.timeZone),
     radar: new ReleaseRadarService(ctx, d.providers),

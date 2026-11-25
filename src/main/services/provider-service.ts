@@ -24,6 +24,8 @@ import type {
   WatchAvailability,
 } from '../../shared/types';
 import { linksFromExternalIds } from '../../domain/links';
+import { applyTitlePreference, groupByCrossIds } from '../../domain/anime';
+import { saveRelationSuggestions, saveStreamingLinks } from '../../db/repositories/extras-repo';
 import {
   canonicalValue,
   compareForRefresh,
@@ -34,6 +36,7 @@ import {
 } from '../../domain/metadata';
 import { titleKey } from '../../domain/normalize';
 import type { MediaType } from '../../shared/enums';
+import { isEpisodic } from '../../shared/enums';
 import { planStatusChange } from '../../domain/status-rules';
 import { readSettings } from '../../db/repositories/config-repo';
 import { addAudit } from '../../db/repositories/catalog-repo';
@@ -42,12 +45,14 @@ import { mergeProviderSeasons, previewSeasonMerge } from '../../db/repositories/
 import type { HttpClient } from '../../providers/http';
 import { RateLimiter } from '../../providers/rate-limiter';
 import { getProvider, PROVIDERS } from '../../providers/registry';
+import { ART_SOURCES } from '../../providers/art-registry';
 import {
   toUserSafeError,
   type MetadataProvider,
   type ProviderContext,
   type ProviderItem,
   type ProviderResult,
+  type SearchHit,
 } from '../../providers/types';
 import type { ArtworkService } from './artwork-service';
 import type { ServiceContext } from './context';
@@ -91,7 +96,7 @@ export class ProviderService {
     private readonly http: HttpClient,
     private readonly secrets: SecretsService,
     private readonly library: LibraryService,
-    private readonly artwork: ArtworkService,
+    readonly artwork: ArtworkService,
     private readonly limiterFactory: (p: MetadataProvider) => RateLimiter = (p) =>
       new RateLimiter(p.rateLimit),
   ) {}
@@ -116,9 +121,41 @@ export class ProviderService {
     };
   }
 
+  /**
+   * Context for a non-metadata source (artwork). Limiters are shared by id, so
+   * TMDB artwork and TMDB metadata draw from the same budget.
+   */
+  sourceContext(
+    id: string,
+    rateLimit: { maxRequests: number; perMs: number },
+    signal?: AbortSignal,
+  ): ProviderContext {
+    let l = this.limiters.get(id);
+    if (!l) {
+      l = new RateLimiter(rateLimit);
+      this.limiters.set(id, l);
+    }
+    const { settings } = readSettings(this.ctx.db());
+    return {
+      http: this.http,
+      limiter: l,
+      keys: this.secrets.keysFor(id),
+      region: settings.region,
+      ...(signal ? { signal } : {}),
+    };
+  }
+
+  sourceEnabled(id: string): boolean {
+    return readSettings(this.ctx.db()).settings.providerEnabled[id] ?? true;
+  }
+
   private enabled(p: MetadataProvider): boolean {
     const { settings } = readSettings(this.ctx.db());
-    return settings.providerEnabled[p.id] ?? true;
+    return settings.providerEnabled[p.id] ?? p.enabledByDefault ?? true;
+  }
+
+  private showAdult(): boolean {
+    return readSettings(this.ctx.db()).settings.anime.showAdult;
   }
 
   private requireProvider(id: string): MetadataProvider {
@@ -144,7 +181,7 @@ export class ProviderService {
   }
 
   list(): ProviderInfo[] {
-    return PROVIDERS.map((p) => {
+    const meta = PROVIDERS.map((p): ProviderInfo => {
       const keys = this.secrets.keysFor(p.id);
       return {
         id: p.id,
@@ -159,8 +196,33 @@ export class ProviderService {
         cachingPolicy: p.cachingPolicy,
         rateLimitText: `${p.rateLimit.maxRequests} request(s) per ${p.rateLimit.perMs / 1000}s`,
         signupUrl: p.signupUrl,
+        termsNote: p.termsNote ?? null,
+        kind: 'metadata' as const,
+        keyLabels: {},
       };
     });
+    const ids = new Set(PROVIDERS.map((p) => p.id));
+    const art: ProviderInfo[] = ART_SOURCES.filter((a) => !ids.has(a.id)).map((a) => {
+      const keys = this.secrets.keysFor(a.id);
+      return {
+        id: a.id,
+        displayName: a.displayName,
+        supports: [...a.supports],
+        attribution: a.attribution,
+        requiresApiKey: a.requiresApiKey,
+        keyFields: [...a.keyFields],
+        keysSet: this.secrets.isSet(a.id, a.keyFields),
+        configured: a.isConfigured(keys),
+        enabled: this.sourceEnabled(a.id),
+        cachingPolicy: a.cachingPolicy,
+        rateLimitText: `${a.rateLimit.maxRequests} request(s) per ${a.rateLimit.perMs / 1000}s`,
+        signupUrl: a.signupUrl,
+        termsNote: a.termsNote,
+        kind: 'art' as const,
+        keyLabels: a.keyLabels ?? {},
+      };
+    });
+    return [...meta, ...art];
   }
 
   async search(input: ProviderSearchInput): Promise<SearchHitView[]> {
@@ -169,7 +231,10 @@ export class ProviderService {
       throw appError('VALIDATION', `${p.displayName} doesn't cover this media type.`);
     const hits = this.unwrap(
       p,
-      await p.search({ type: input.type, query: input.query, year: input.year }, this.context(p)),
+      await p.search(
+        { type: input.type, query: input.query, year: input.year, includeAdult: this.showAdult() },
+        this.context(p),
+      ),
     );
     this.ctx.log.info('provider.search', { providerId: p.id, results: hits.length });
     return hits.map((h) => {
@@ -196,7 +261,16 @@ export class ProviderService {
   async preview(ref: ProviderRef): Promise<ImportPreview> {
     this.prune();
     const p = this.requireProvider(ref.providerId);
-    const item = this.unwrap(p, await p.fetchDetails(ref, this.context(p)));
+    const raw = this.unwrap(p, await p.fetchDetails(ref, this.context(p)));
+    const { settings } = readSettings(this.ctx.db());
+    if (raw.meta.isAdult && !settings.anime.showAdult)
+      throw appError('VALIDATION', 'This title is marked as adult content, which is hidden.', {
+        recovery: 'Turn on "Show adult titles" in Settings → Anime to import it.',
+      });
+    const item =
+      ref.type === 'anime'
+        ? { ...raw, meta: applyTitlePreference(raw.meta, settings.anime.titleLanguage) }
+        : raw;
     const t = token();
     this.previews.set(t, { provider: p, item, at: Date.now() });
     bounded(this.previews, 20);
@@ -208,7 +282,7 @@ export class ProviderService {
     }
     const warnings: string[] = [];
     if (!item.meta.description) warnings.push('No description was provided.');
-    if (ref.type === 'tv' && item.seasons.length === 0)
+    if (isEpisodic(ref.type) && item.seasons.length === 0)
       warnings.push('No season/episode list was provided; you can add episodes manually.');
     if (ref.type === 'book' && item.meta.pageCount === null)
       warnings.push('Page count is unknown; you can track progress by percentage.');
@@ -294,12 +368,154 @@ export class ProviderService {
         },
       );
       this.previews.delete(input.previewToken);
+      if (r.kind === 'created') await this.applyExtras(r.item.id, p, item, warnings);
       return { ...r, warnings };
     } catch (e) {
       // Item creation is transactional; remove any artwork we fetched for it.
       this.artwork.gc();
       throw e;
     }
+  }
+
+  /**
+   * Post-import/refresh extras: marks the provider cover as the automatic cover
+   * slot, fills a banner when the provider has one (never over a user choice),
+   * and stores relation suggestions + documented streaming links.
+   */
+  private async applyExtras(
+    itemId: string,
+    p: MetadataProvider,
+    item: ProviderItem,
+    warnings: string[],
+  ): Promise<void> {
+    const db = this.ctx.db();
+    const now = this.ctx.clock.now().toISOString();
+    const row = db.get<{ artwork_id: string | null }>('SELECT artwork_id FROM items WHERE id = ?', [itemId]);
+    if (row?.artwork_id && !this.artwork.selectedRow(itemId, 'cover'))
+      this.artwork.select(itemId, 'cover', row.artwork_id, false);
+    for (const extra of item.extraArt ?? []) {
+      try {
+        const a = await this.artwork.adopt(
+          itemId,
+          extra.slot,
+          {
+            url: extra.url,
+            sourceId: p.id,
+            policy: p.cachingPolicy,
+            hosts: p.artworkHosts,
+            attribution: p.displayName,
+            licenseNote: null,
+            assetId: null,
+            width: null,
+            height: null,
+            language: null,
+            adult: item.meta.isAdult,
+          },
+          false,
+        );
+        if (a.warning) warnings.push(a.warning);
+      } catch (e) {
+        this.ctx.log.warn('artwork.extraFailed', { providerId: p.id, error: e });
+      }
+    }
+    db.transaction(() => {
+      if (item.relations?.length) saveRelationSuggestions(db, itemId, p.id, item.relations, now);
+      if (item.streaming) saveStreamingLinks(db, itemId, p.id, item.streaming, now);
+    });
+  }
+
+  /**
+   * "All sources" anime search: queries every enabled, configured anime source
+   * in the user's provider order, then merges hits that share a cross id
+   * (AniList/MAL/Kitsu). The first source in the order wins the merged row.
+   */
+  async searchAllAnime(
+    query: string,
+    year: number | null,
+  ): Promise<{
+    hits: (SearchHitView & { alsoOn: string[] })[];
+    failures: { providerId: string; message: string }[];
+  }> {
+    const { settings } = readSettings(this.ctx.db());
+    const order = settings.anime.providerOrder;
+    const rank = (id: string) => {
+      const i = order.indexOf(id);
+      return i === -1 ? order.length : i;
+    };
+    const sources = PROVIDERS.filter(
+      (p) => p.supports.includes('anime') && this.enabled(p) && p.isConfigured(this.secrets.keysFor(p.id)),
+    ).sort((a, b) => rank(a.id) - rank(b.id));
+    const results = await Promise.all(
+      sources.map(async (p) => ({
+        p,
+        r: await p.search(
+          { type: 'anime', query, year, includeAdult: settings.anime.showAdult },
+          this.context(p),
+        ),
+      })),
+    );
+    const failures: { providerId: string; message: string }[] = [];
+    const flat: {
+      p: MetadataProvider;
+      hit: SearchHit;
+      providerId: string;
+      ids: SearchHit['crossIds'] & object;
+    }[] = [];
+    for (const { p, r } of results) {
+      if (r.kind !== 'ok') {
+        failures.push({ providerId: p.id, message: toUserSafeError(r, p.displayName).message });
+        continue;
+      }
+      for (const hit of r.value) flat.push({ p, hit, providerId: p.id, ids: hit.crossIds ?? {} });
+    }
+    const groups = groupByCrossIds(flat);
+    const hits = groups
+      .flatMap((g) => {
+        const best = [...g].sort((a, b) => rank(a.providerId) - rank(b.providerId))[0] ?? g[0];
+        if (!best) return null;
+        const view = this.toHitView(best.p, best.hit);
+        return [
+          {
+            ...view,
+            alsoOn: [...new Set(g.map((x) => x.p.displayName))].filter((n) => n !== best.p.displayName),
+          },
+        ];
+      })
+      .filter((x) => x !== null);
+    this.ctx.log.info('provider.searchAll', { sources: sources.length, results: hits.length });
+    return { hits, failures };
+  }
+
+  private toHitView(p: MetadataProvider, h: SearchHit): SearchHitView {
+    let thumbUrl: string | null = null;
+    if (h.thumbUrl) {
+      const t = token();
+      this.previewThumbs.set(t, h.thumbUrl);
+      bounded(this.previewThumbs, 500);
+      thumbUrl = `maybepile-art://preview/${t}`;
+    }
+    return {
+      providerId: p.id,
+      ref: h.ref,
+      title: h.title,
+      year: h.year,
+      type: h.type,
+      creators: h.creators,
+      synopsis: h.synopsis,
+      thumbUrl,
+    };
+  }
+
+  /** Re-fetches the item's own source record (used by the Artwork Picker for provider art). */
+  async fetchSourceItem(itemId: string): Promise<{ provider: MetadataProvider; item: ProviderItem } | null> {
+    let src: { provider: MetadataProvider; ref: ProviderRef };
+    try {
+      src = this.sourceFor(itemId);
+    } catch {
+      return null;
+    }
+    const r = await src.provider.fetchDetails(src.ref, this.context(src.provider));
+    return r.kind === 'ok' ? { provider: src.provider, item: r.value } : null;
   }
 
   /* ---------------------------------------------------------------- refresh */
@@ -336,8 +552,9 @@ export class ProviderService {
     if (!row) throw appError('NOT_FOUND', 'That item no longer exists.');
     const current = items.loadMeta(db, row);
     const cmp = compareForRefresh(row.type, current, incoming.meta, items.loadProvenance(db, itemId));
-    const eps =
-      row.type === 'tv' ? previewSeasonMerge(db, itemId, incoming.seasons) : { added: 0, updated: 0 };
+    const eps = isEpisodic(row.type)
+      ? previewSeasonMerge(db, itemId, incoming.seasons)
+      : { added: 0, updated: 0 };
     const t = token();
     this.refreshes.set(t, { provider: p, itemId, item: incoming, rows: cmp.rows, at: Date.now() });
     bounded(this.refreshes, 20);
@@ -406,7 +623,7 @@ export class ProviderService {
           items.setProvenance(db, row.id, f, 'provider', p.id, canonicalValue(f, incoming.meta[f]), now);
         }
       }
-      if (row.type === 'tv') {
+      if (isEpisodic(row.type)) {
         const eps = mergeProviderSeasons(db, row.id, incoming.seasons);
         if (eps.added > 0)
           changes.push({ field: 'episodes', oldValue: null, newValue: `${eps.added} new episode(s)` });
@@ -424,6 +641,10 @@ export class ProviderService {
       items.recomputeProgress(db, row.id);
     });
     this.refreshes.delete(input.token);
+    db.transaction(() => {
+      if (incoming.relations?.length) saveRelationSuggestions(db, row.id, p.id, incoming.relations, now);
+      if (incoming.streaming) saveStreamingLinks(db, row.id, p.id, incoming.streaming, now);
+    });
     this.ctx.log.info('provider.refreshApplied', { providerId: p.id, itemId: row.id });
     return this.library.get(row.id);
   }
@@ -508,8 +729,8 @@ export class ProviderService {
       attribution: null,
       message: '',
     };
-    if (item.type !== 'movie' && item.type !== 'tv')
-      return { ...base, message: 'Where-to-watch applies to movies and TV shows.' };
+    if (item.type !== 'movie' && item.type !== 'tv' && item.type !== 'anime')
+      return { ...base, message: 'Where-to-watch applies to movies, TV shows and anime.' };
     const tmdbId = item.meta.externalIds.find((e) => e.kind === 'tmdb')?.value;
     const p = getProvider('tmdb');
     if (!p?.discoverLinks) return { ...base, status: 'unavailable', message: 'Availability unavailable.' };

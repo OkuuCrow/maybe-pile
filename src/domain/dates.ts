@@ -94,3 +94,17 @@ export function weekStartUtc(date: Date): string {
   d.setUTCDate(d.getUTCDate() - dow);
   return d.toISOString().slice(0, 10);
 }
+
+/** Adds whole days to an ISO date (YYYY-MM-DD), in UTC. */
+export function addDays(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate.slice(0, 10)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whole days from `a` to `b` (ISO dates); negative when b is earlier. */
+export function daysBetween(a: string, b: string): number {
+  return Math.round(
+    (Date.parse(`${b.slice(0, 10)}T00:00:00Z`) - Date.parse(`${a.slice(0, 10)}T00:00:00Z`)) / 86_400_000,
+  );
+}

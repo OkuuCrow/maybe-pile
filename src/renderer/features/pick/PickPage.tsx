@@ -26,6 +26,9 @@ interface Constraints {
   availableMinutes: number | null;
   ratingFloor: number | null;
   excludeSkipped: boolean;
+  moodIds: string[];
+  finishWithinMinutes: number | null;
+  respectSeriesOrder: boolean;
 }
 
 const TIME_OPTIONS = [
@@ -75,7 +78,11 @@ export function PickPanel({ compact }: { compact: boolean }) {
     availableMinutes: null,
     ratingFloor: null,
     excludeSkipped: true,
+    moodIds: [],
+    finishWithinMinutes: null,
+    respectSeriesOrder: false,
   });
+  const moods = useAsync(() => call(getApi().moods.list()), [app.dataVersion]);
   const [tagText, setTagText] = useState('');
   const [result, setResult] = useState<PickResultView | null>(null);
   const [busy, setBusy] = useState(false);
@@ -151,7 +158,13 @@ export function PickPanel({ compact }: { compact: boolean }) {
                     ? { excludeSkipped: false }
                     : key === 'genres'
                       ? { genres: [] }
-                      : {};
+                      : key === 'moods'
+                        ? { moodIds: [] }
+                        : key === 'finishWithin'
+                          ? { finishWithinMinutes: null }
+                          : key === 'seriesOrder'
+                            ? { respectSeriesOrder: false }
+                            : {};
     if (key === 'tags') setTagText('');
     void roll(key === 'tags' ? { ...fix } : fix);
   };
@@ -193,6 +206,41 @@ export function PickPanel({ compact }: { compact: boolean }) {
                   {o.label}
                 </option>
               ))}
+            </select>
+          </div>
+          <div className="field field-inline">
+            <label htmlFor={`${uid}-finish`}>Finish within</label>
+            <select
+              id={`${uid}-finish`}
+              className="input input-inline"
+              value={c.finishWithinMinutes === null ? '' : String(c.finishWithinMinutes)}
+              onChange={(e) =>
+                setC({ ...c, finishWithinMinutes: e.target.value ? Number(e.target.value) : null })
+              }
+            >
+              <option value="">No limit</option>
+              <option value="120">2 hours</option>
+              <option value="300">5 hours</option>
+              <option value="600">10 hours</option>
+              <option value="1200">20 hours</option>
+            </select>
+          </div>
+          <div className="field field-inline">
+            <label htmlFor={`${uid}-mood`}>Mood</label>
+            <select
+              id={`${uid}-mood`}
+              className="input input-inline"
+              value={c.moodIds[0] ?? ''}
+              onChange={(e) => setC({ ...c, moodIds: e.target.value ? [e.target.value] : [] })}
+            >
+              <option value="">Any mood</option>
+              {(moods.data ?? [])
+                .filter((m) => !m.hidden)
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
             </select>
           </div>
           {!compact && (
@@ -264,6 +312,11 @@ export function PickPanel({ compact }: { compact: boolean }) {
               label="Skip things I said “Not now” to"
               checked={c.excludeSkipped}
               onChange={(v) => setC({ ...c, excludeSkipped: v })}
+            />
+            <Checkbox
+              label="Only the next entry of ordered series"
+              checked={c.respectSeriesOrder}
+              onChange={(v) => setC({ ...c, respectSeriesOrder: v })}
             />
           </div>
         )}

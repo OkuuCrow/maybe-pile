@@ -109,7 +109,36 @@ const typePaths: Record<MediaType, ReactElement> = {
       <path d="M20 4h-6a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h7z" />
     </g>
   ),
+  // Anime: a screen with a star sparkle (distinct silhouette from TV).
+  anime: (
+    <g>
+      <rect x="3" y="6" width="18" height="12" rx="2" />
+      <path d="M12 9l1 2.2 2.4.3-1.8 1.6.5 2.4L12 14.3l-2.1 1.2.5-2.4-1.8-1.6 2.4-.3z" />
+      <path d="M8 21h8" />
+    </g>
+  ),
 };
+
+export const IconImage = ({ size = 16 }: IconProps) =>
+  base(size, [
+    <rect key="a" x="3" y="5" width="18" height="14" rx="2" />,
+    <circle key="b" cx="9" cy="10" r="1.5" />,
+    <path key="c" d="m21 16-5-5-8 8" />,
+  ]);
+export const IconTimer = ({ size = 16 }: IconProps) =>
+  base(size, [<circle key="a" cx="12" cy="13" r="7" />, <path key="b" d="M12 9v4l2 2M10 3h4" />]);
+export const IconEye = ({ size = 16 }: IconProps) =>
+  base(size, [
+    <path key="a" d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z" />,
+    <circle key="b" cx="12" cy="12" r="3" />,
+  ]);
+export const IconShield = ({ size = 16 }: IconProps) =>
+  base(size, <path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6z" />);
+export const IconLink = ({ size = 16 }: IconProps) =>
+  base(size, [
+    <path key="a" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" />,
+    <path key="b" d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
+  ]);
 
 export const TypeIcon = ({ type, size = 16 }: { type: MediaType; size?: number }) =>
   base(size, typePaths[type]);

@@ -242,7 +242,7 @@ function TrackersTab() {
   const [profileId, setProfileId] = useState('');
   const [preview, setPreview] = useState<TrackerPreviewView | null>(null);
   const [busy, setBusy] = useState(false);
-  const start = async (kind: 'goodreads' | 'letterboxd' | 'csv') => {
+  const start = async (kind: 'goodreads' | 'letterboxd' | 'csv' | 'mal') => {
     setBusy(true);
     try {
       const p = await call(
@@ -292,6 +292,23 @@ function TrackersTab() {
             disabled={busy}
           >
             Choose Letterboxd export…
+          </button>
+        </section>
+        <section className="card">
+          <h2>MyAnimeList</h2>
+          <p>
+            On MyAnimeList: <strong>Profile → Export lists → Export My Anime List</strong>. Choose the
+            downloaded .xml.gz (or the .xml inside). Statuses, scores, watched episodes, dates, tags and
+            rewatch counts come across; manga entries are skipped (track manga as Books). Imports can be
+            undone from History.
+          </p>
+          <button
+            type="button"
+            className="button button-primary"
+            onClick={() => void start('mal')}
+            disabled={busy}
+          >
+            Choose MyAnimeList export…
           </button>
         </section>
         <section className="card">
@@ -489,6 +506,7 @@ const KIND_LABEL: Record<ImportBatchView['kind'], string> = {
   goodreads: 'Goodreads',
   letterboxd: 'Letterboxd',
   'csv-mapped': 'CSV',
+  'mal-xml': 'MyAnimeList',
 };
 
 function HistoryTab() {

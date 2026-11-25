@@ -2,11 +2,11 @@
 
 **Someday, maybe. Now organized.**
 
-Maybe Pile is a local-first desktop app for the movies, TV shows, video games and books you mean to get to, are deep into, or have finished. It runs on Windows, macOS and Linux, works fully offline, and keeps your library on your computer in open formats.
+Maybe Pile is a local-first desktop app for the movies, TV shows, anime, video games and books you mean to get to, are deep into, or have finished. It runs on Windows, macOS and Linux, works fully offline, and keeps your library on your computer in open formats.
 
 - Track items as **Planned, In Progress, Completed, On Hold or Dropped**, with ratings (half-star), notes, tags, custom fields and dates.
 - Progress that fits each medium: **movie viewings**, **TV seasons and episodes** (specials, unknown totals, "up to here"), **game progress schemes** (percent, hours, milestones, free text), and **book pages, percent or audiobook time** (unknown or changing page counts are fine). Every update is kept in an editable history.
-- **Search online sources**, preview, and import. Wikidata, TVmaze, Open Library and AniList need no setup and cover every media type; TMDB and IGDB are optional extras with free API keys. Or enter everything by hand. Refresh metadata later and choose per field what to keep; your edits are never silently overwritten.
+- **Search online sources**, preview, and import. Wikidata, TVmaze, Open Library and Kitsu need no setup and cover every media type; TMDB, IGDB and the official MyAnimeList API are optional extras with your own free keys. AniList and Jikan can be turned on after reading their terms notes. Or enter everything by hand. Refresh metadata later and choose per field what to keep; your edits are never silently overwritten.
 - **Search, filter (type, status, tags, rating, date added) and sort** large libraries instantly. Bulk actions and duplicate detection are included.
 - **Steam library import** with your own key: see what you haven't played, choose what joins the pile, re-sync later and undo imports. Other stores work through a pasted or uploaded game list.
 - **Pick for Me** (weighted, with constraints such as time tonight, lists, tags and rating), a reorderable **Up Next** shelf, gentle **Pile Health** nudges with snoozes, and your own **Lists**.
@@ -14,6 +14,9 @@ Maybe Pile is a local-first desktop app for the movies, TV shows, video games an
 - **Tracker imports** from Goodreads, Letterboxd and any CSV (column mapper with saved profiles), all with preview and undo.
 - A **command palette** (Ctrl/⌘+K) and **Quick Capture** (Ctrl/⌘+Shift+N, optional global shortcut).
 - **Themes and layouts** you can edit, share and reset. Accessible by design (keyboard, screen readers, WCAG AA contrast).
+- **Anime** as its own type: romaji/English/native titles, format, airing status, season, studios, sub/dub preference, adult content hidden by default, "All anime sources" search with de-duplication, relation suggestions, documented streaming links, and **MyAnimeList XML import** with undo.
+- An **Artwork Picker** for cover, banner, logo, icon and background, gathering candidates from several sources (TMDB, fanart.tv, SteamGridDB and the item's own source). Your choices are never replaced automatically, and every image passes strict safety checks.
+- **Pile Time** (how long your pile would take, with sources and confidence), **Moods**, **Runs** (rewatch/replay history), **Series** with "Next in series", **Spoiler Shield**, **Pile Value** (per currency, no conversion), a **session timer** that survives restarts, **ownership & Leaving Soon**, offline **explainable recommendations**, a local **share card**, a **completion heatmap** (with table view), **duplicate merge** with undo, and a **sync folder** for keeping computers in step without a server.
 - **Backups** (`.mpbackup`), **JSON/CSV export and import** with preview and conflict handling, and safe moves between Windows, macOS and Linux.
 
 ## Requirements
@@ -92,7 +95,10 @@ Press `?` at any time for keyboard shortcuts.
 | [packaging.md](docs/packaging.md) | Builds, installers, signing, CI |
 | [verification-log.md](docs/verification-log.md) | Exactly what was run for this build, and the results |
 | [steam-import.md](docs/steam-import.md) | Steam key setup, privacy settings, review/import/re-sync/undo, troubleshooting |
-| [features/](docs/features/) | One page each: Pick for Me, Up Next, Pile Health, Lists, Stats, Release Radar, Tracker Imports, Quick Capture & palette, Goals |
+| [anime.md](docs/anime.md) | Anime fields, sources, episode edge cases, MAL XML import |
+| [artwork.md](docs/artwork.md) | Artwork Picker, slots, automatic picks, storage and image safety |
+| [sync.md](docs/sync.md) | Sync folder: what syncs, how conflicts work, safety |
+| [features/](docs/features/) | One page each: Pick for Me, Up Next, Pile Health, Lists, Stats, Release Radar, Tracker Imports, Quick Capture & palette, Goals, Pile Time, Moods, Runs, Series, Spoiler Shield, Pile Value, Sessions, Ownership, Recommendations, Share card, Heatmap, Duplicate merge |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration notes |
 
 ## AI assistance disclaimer

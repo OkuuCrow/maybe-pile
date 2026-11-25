@@ -6,7 +6,8 @@
  * explicit skip-or-duplicate choice. Applied imports are undoable batches.
  */
 import { randomUUID } from 'node:crypto';
-import { unzipSync } from 'fflate';
+import { gunzipSync, unzipSync } from 'fflate';
+import { MalXmlError, malSeasons, parseMalXml, type MalRow } from '../../domain/mal-xml';
 import { appError } from '../../shared/result';
 import type { CreatorRole, MediaType } from '../../shared/enums';
 import { MetadataFieldsSchema, PersonalFieldsSchema } from '../../shared/schemas';
@@ -33,7 +34,10 @@ import type { ServiceContext } from './context';
 import type { ImportService } from './import-service';
 import type { ExportItem } from './portable-format';
 
-export type TrackerKind = 'goodreads' | 'letterboxd' | 'csv';
+export type TrackerKind = 'goodreads' | 'letterboxd' | 'csv' | 'mal';
+
+/** Decompressed size cap for .xml.gz MAL exports. */
+export const MAL_MAX_XML_BYTES = 60 * 1024 * 1024;
 
 export interface TrackerFile {
   name: string;
@@ -51,6 +55,7 @@ const ROLE_FOR: Record<MediaType, CreatorRole> = {
   movie: 'director',
   tv: 'creator',
   game: 'developer',
+  anime: 'studio',
 };
 const LETTERBOXD_FILES = /(?:^|\/)(watched|ratings|watchlist|diary)\.csv$/i;
 const MAX_ZIP_ENTRY = 20 * 1024 * 1024;
@@ -113,6 +118,7 @@ export class TrackerImportService {
     }
     const first = files[0];
     if (!first) throw appError('VALIDATION', 'Choose a file.');
+    if (kind === 'mal') return this.previewMal(first, label);
     const text = this.decode(first.bytes);
     const { rows, delimiter } = this.parse(text, first.name);
     if (rows.length - 1 > TRACKER_MAX_ROWS)
@@ -213,7 +219,13 @@ export class TrackerImportService {
     if (out.rows.length === 0 && !messages.some((m) => m.severity === 'error'))
       messages.push({ severity: 'error', path: '$', message: 'No importable rows were found.' });
     const kind =
-      tracker === 'goodreads' ? 'goodreads' : tracker === 'letterboxd' ? 'letterboxd' : 'csv-mapped';
+      tracker === 'goodreads'
+        ? 'goodreads'
+        : tracker === 'letterboxd'
+          ? 'letterboxd'
+          : tracker === 'mal'
+            ? 'mal-xml'
+            : 'csv-mapped';
     const view = this.importer.storePreview('csv', fileLabel, items, null, messages.slice(0, 200), {
       batch: { kind, label: `${formatLabel}: ${fileLabel}`.slice(0, 200) },
       allowed: ['skip', 'duplicate'],
@@ -288,6 +300,146 @@ export class TrackerImportService {
         pass: 1,
         createdAt: now,
       })),
+      artwork: null,
+      audit: [],
+      customFieldsByName: {},
+    };
+  }
+
+  /* ---------------------------------------------------------------- MyAnimeList XML */
+
+  private previewMal(f: TrackerFile, label: string): TrackerPreviewView {
+    let bytes = f.bytes;
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b) {
+      try {
+        // Reject decompression bombs: the gzip footer's ISIZE is checked first, then the real output.
+        const isize =
+          bytes.length >= 4
+            ? new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 4, 4).getUint32(0, true)
+            : 0;
+        if (isize > MAL_MAX_XML_BYTES) throw new MalXmlError('too large');
+        bytes = gunzipSync(bytes);
+      } catch (e) {
+        if (e instanceof MalXmlError)
+          throw appError(
+            'TOO_LARGE',
+            `"${f.name}" expands to more than ${MAL_MAX_XML_BYTES / 1024 / 1024} MB.`,
+          );
+        throw appError('CORRUPT', `"${f.name}" is not a readable .gz file.`);
+      }
+      if (bytes.byteLength > MAL_MAX_XML_BYTES)
+        throw appError(
+          'TOO_LARGE',
+          `"${f.name}" expands to more than ${MAL_MAX_XML_BYTES / 1024 / 1024} MB.`,
+        );
+    }
+    let parsed;
+    try {
+      parsed = parseMalXml(this.decode(bytes));
+    } catch (e) {
+      throw appError(
+        'VALIDATION',
+        e instanceof MalXmlError ? e.message : 'The MyAnimeList file could not be read.',
+        {
+          recovery:
+            'On MyAnimeList open your profile → Export lists, export your anime list and choose that file.',
+        },
+      );
+    }
+    const today = localDate(this.ctx.clock.now());
+    const messages: ValidationMessage[] = parsed.messages.map((m) => ({
+      severity: m.severity === 'error' && parsed.rows.length > 0 ? 'warning' : m.severity,
+      path: `anime ${m.row}, ${m.column}`,
+      message: m.message,
+    }));
+    if (parsed.mangaSkipped > 0)
+      messages.push({
+        severity: 'warning',
+        path: '$',
+        message: `${parsed.mangaSkipped} manga entr${parsed.mangaSkipped === 1 ? 'y was' : 'ies were'} skipped. Track manga as Books.`,
+      });
+    const items: ExportItem[] = [];
+    for (const r of parsed.rows) {
+      const it = this.malToExportItem(r, today, (msg) =>
+        messages.push({
+          severity: 'warning',
+          path: `anime ${r.row}`,
+          message: `${msg} This entry was skipped.`,
+        }),
+      );
+      if (it) items.push(it);
+    }
+    if (items.length === 0 && !messages.some((m) => m.severity === 'error'))
+      messages.push({ severity: 'error', path: '$', message: 'No importable anime were found.' });
+    const view = this.importer.storePreview('csv', label, items, null, messages.slice(0, 200), {
+      batch: { kind: 'mal-xml', label: `MyAnimeList list: ${label}`.slice(0, 200) },
+      allowed: ['skip', 'duplicate'],
+      formatLabel: 'MyAnimeList list export',
+    });
+    return { ...view, tracker: 'mal', header: [], sample: [], delimiter: ',', mapping: null, mapToken: null };
+  }
+
+  private malToExportItem(r: MalRow, today: string, skip: (msg: string) => void): ExportItem | null {
+    const meta = MetadataFieldsSchema.safeParse(
+      pruneMetaForType('anime', {
+        ...emptyMeta(r.title),
+        externalIds: [{ kind: 'mal', value: r.malId }],
+        titleRomaji: r.title,
+        animeFormat: r.format,
+        episodeCount: r.totalEpisodes,
+      }),
+    );
+    if (!meta.success) {
+      skip(formatZodIssues(meta.error)[0]?.message ?? 'Invalid details.');
+      return null;
+    }
+    const dateStarted =
+      r.dateStarted && r.dateCompleted && r.dateCompleted < r.dateStarted ? null : r.dateStarted;
+    const personal = PersonalFieldsSchema.safeParse({
+      ...defaultPersonal('anime', today),
+      status: r.status,
+      rating: r.rating,
+      notes: r.notes,
+      dateAdded: today,
+      dateStarted: dateStarted && dateStarted <= today ? dateStarted : null,
+      dateCompleted:
+        r.status === 'completed' && r.dateCompleted && r.dateCompleted <= today ? r.dateCompleted : null,
+      tags: uniqueTags(r.tags.map((t) => t.slice(0, 64)).filter((t) => tagKey(t) !== '')).slice(0, 100),
+    });
+    if (!personal.success) {
+      skip(formatZodIssues(personal.error)[0]?.message ?? 'Invalid personal fields.');
+      return null;
+    }
+    const now = this.ctx.clock.now().toISOString();
+    const seasons = malSeasons(r).map((s) => ({
+      number: s.number,
+      title: s.title,
+      episodeCountKnown: s.episodeCountKnown,
+      episodes: s.episodes.map((e) => ({
+        number: e.number,
+        title: e.title,
+        airDate: null,
+        runtime: e.runtime,
+        watched: e.number <= s.watchedUpTo,
+        watchedAt: e.number <= s.watchedUpTo ? now : null,
+        source: 'user' as const,
+      })),
+    }));
+    return {
+      id: randomUUID(),
+      type: 'anime',
+      meta: meta.data,
+      personal: personal.data,
+      // MAL "times watched" counts completed rewatches: the current run is one more.
+      pass: Math.min(1000, 1 + r.timesWatched),
+      createdAt: now,
+      updatedAt: now,
+      provenance: {},
+      sources: [],
+      seasons,
+      milestones: [],
+      progress: [],
+      viewings: [],
       artwork: null,
       audit: [],
       customFieldsByName: {},

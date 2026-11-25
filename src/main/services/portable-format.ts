@@ -6,9 +6,13 @@
  *   2 — app 1.2: adds lists, goals, snoozes, library sources (snapshots and
  *       ignore flags), import batches and CSV mapping profiles. All new
  *       sections are optional so version-1 files still import unchanged.
+ *   3 — Expansion Pack 2: anime fields inside item meta, plus the optional
+ *       `pack2` section (src/main/services/pack2-portable.ts). Version 1/2
+ *       files import unchanged.
  * The schema here is the single source of truth for what an export contains;
  * imports are validated against it before anything is written.
  */
+import { Pack2SectionSchema } from './pack2-portable';
 import { z } from 'zod';
 import {
   CUSTOM_FIELD_TYPES,
@@ -29,7 +33,7 @@ import { LIST_COLORS, LIST_ICONS } from '../../shared/schemas';
 import { LayoutFileSchema } from '../../domain/layouts';
 
 export const EXPORT_FORMAT = 'maybepile-export';
-export const EXPORT_FORMAT_VERSION = 2;
+export const EXPORT_FORMAT_VERSION = 3;
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
 export const MAX_IMPORT_ITEMS = 100_000;
 
@@ -270,7 +274,7 @@ export const ExportEnvelopeSchema = z.object({
       .array(
         z.object({
           id: IdSchema,
-          kind: z.enum(['steam', 'manual-list', 'goodreads', 'letterboxd', 'csv-mapped']),
+          kind: z.enum(['steam', 'manual-list', 'goodreads', 'letterboxd', 'csv-mapped', 'mal-xml']),
           sourceId: IdSchema.nullable(),
           label: z.string().max(200),
           createdAt: ts,
@@ -294,6 +298,8 @@ export const ExportEnvelopeSchema = z.object({
       .array(z.object({ name: z.string().min(1).max(80), mapping: z.unknown() }))
       .max(500)
       .optional(),
+    /* ---- formatVersion 3 ---- */
+    pack2: Pack2SectionSchema.optional(),
   }),
 });
 export type ExportEnvelope = z.infer<typeof ExportEnvelopeSchema>;

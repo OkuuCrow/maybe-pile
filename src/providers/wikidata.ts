@@ -24,6 +24,8 @@ const API = 'https://www.wikidata.org/w/api.php';
 
 /** Instance-of (P31) classes accepted for each media type, plus a description fallback. */
 const TYPE_CLASSES: Record<MediaType, { ids: ReadonlySet<string>; describe: RegExp }> = {
+  // Not offered for anime searches (see `supports`); present so the map stays total.
+  anime: { ids: new Set(['Q1107', 'Q63952888', 'Q20650540', 'Q220898']), describe: /\banime\b/i },
   movie: {
     ids: new Set(['Q11424', 'Q24869', 'Q202866', 'Q506240', 'Q229390', 'Q93204', 'Q20650540', 'Q24862']),
     describe: /\b(film|movie)\b/i,

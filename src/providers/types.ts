@@ -4,7 +4,7 @@
  * database, filesystem or UI, so they can be added, replaced or disabled
  * without changing anything else (see docs/providers.md, "How to add a provider").
  */
-import type { MediaType } from '../shared/enums';
+import type { ExternalIdKind, MediaType, RelationInput } from '../shared/enums';
 import type { MetadataFields, ProviderRef, SeasonInput } from '../shared/schemas';
 import type { UserSafeError } from '../shared/result';
 import type { HttpClient } from './http';
@@ -39,6 +39,8 @@ export interface SearchQuery {
   type: MediaType;
   query: string;
   year: number | null;
+  /** Adult titles are excluded unless the user opted in (Settings → Content). */
+  includeAdult?: boolean;
 }
 
 export interface SearchHit {
@@ -49,6 +51,25 @@ export interface SearchHit {
   creators: string[];
   synopsis: string | null;
   thumbUrl: string | null;
+  /** Cross-provider ids (anime): used to de-duplicate "All sources" results. */
+  crossIds?: Partial<Record<ExternalIdKind, string>>;
+  adult?: boolean;
+}
+
+/** A related title reported by the provider (becomes a franchise *suggestion*, never auto-applied). */
+export interface ProviderRelation {
+  relation: RelationInput | 'adapted_as';
+  ref: ProviderRef;
+  title: string;
+  year: number | null;
+}
+
+/** A where-to-watch link the provider documents (never a guessed URL). */
+export interface ProviderStreamingLink {
+  service: string;
+  url: string;
+  subs: string[];
+  dubs: string[];
 }
 
 export interface ProviderItem {
@@ -57,6 +78,11 @@ export interface ProviderItem {
   seasons: SeasonInput[];
   artworkUrl: string | null;
   sourceUrl: string | null;
+  /** Optional extras (anime providers). */
+  relations?: ProviderRelation[];
+  streaming?: ProviderStreamingLink[];
+  /** Extra provider artwork, e.g. AniList/Kitsu banners. */
+  extraArt?: { slot: 'banner' | 'background'; url: string }[];
 }
 
 export interface WatchProviders {
@@ -72,6 +98,10 @@ export interface MetadataProvider {
   requiresApiKey: boolean;
   keyFields: ('apiKey' | 'clientId' | 'clientSecret')[];
   signupUrl: string | null;
+  /** Off until the user turns it on (e.g. terms concerns). Defaults to true. */
+  enabledByDefault?: boolean;
+  /** Plain-language terms caveat shown in Settings → Providers. */
+  termsNote?: string | null;
   rateLimit: { maxRequests: number; perMs: number; maxWaitMs?: number };
   /** Whether artwork may be stored locally (per provider terms; see docs/providers.md). */
   cachingPolicy: 'cache-allowed' | 'remote-only';

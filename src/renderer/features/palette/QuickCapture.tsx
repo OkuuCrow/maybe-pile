@@ -16,6 +16,8 @@ import { Dialog } from '../../components/Dialog';
 /** Gentle type hint from the title text (never overrides the user's choice). */
 export function guessType(title: string): MediaType | null {
   const t = title.toLowerCase();
+  // Checked before TV: "anime", OVA/ONA and "cour" are anime-specific words.
+  if (/\b(anime|ova|ona|cour)\b/.test(t)) return 'anime';
   if (/\b(season|s\d{1,2}e\d{1,2}|series|tv)\b/.test(t)) return 'tv';
   if (/\b(novel|book|vol\.?|volume|isbn)\b/.test(t)) return 'book';
   if (/\b(game|goty|remastered|edition|dlc)\b/.test(t)) return 'game';

@@ -8,6 +8,11 @@
  */
 import { z } from 'zod';
 import {
+  AIRING_STATUSES,
+  ANIME_FORMATS,
+  ANIME_SEASONS,
+  ARTWORK_SLOTS,
+  AUDIO_PREFS,
   BOOK_FORMATS,
   CREATOR_ROLES,
   CUSTOM_FIELD_TYPES,
@@ -17,6 +22,7 @@ import {
   SHOW_STATUSES,
   SORT_FIELDS,
   STATUSES,
+  TITLE_LANGUAGES,
 } from './enums';
 import { isValidIsoDate, isValidPartialDate } from '../domain/dates';
 
@@ -133,6 +139,19 @@ export const MetadataFieldsSchema = z.strictObject({
   audioMinutes: nonNegInt(100_000),
   isbn10: nullableText(13),
   isbn13: nullableText(17),
+  // anime (Expansion Pack 2). Defaults keep pre-2.0 payloads and export files valid.
+  animeFormat: z.enum(ANIME_FORMATS).nullable().default(null),
+  airingStatus: z.enum(AIRING_STATUSES).nullable().default(null),
+  animeSeason: z.enum(ANIME_SEASONS).nullable().default(null),
+  seasonYear: z.number().int().min(1900).max(2200).nullable().default(null),
+  sourceMaterial: nullableText(40).default(null),
+  episodeCount: nonNegInt(100_000).default(null),
+  nextEpisode: nonNegInt(100_000).default(null),
+  nextAiringAt: IsoDateTimeSchema.nullable().default(null),
+  isAdult: z.boolean().default(false),
+  titleRomaji: nullableText(LIMITS.title).default(null),
+  titleEnglish: nullableText(LIMITS.title).default(null),
+  titleNative: nullableText(LIMITS.title).default(null),
 });
 export type MetadataFields = z.infer<typeof MetadataFieldsSchema>;
 export type MetadataField = keyof MetadataFields;
@@ -461,6 +480,37 @@ export const QuickCaptureSettingsSchema = z.strictObject({
   accelerator: AcceleratorSchema,
 });
 
+/* ---- Expansion Pack 2 settings ---- */
+const ProviderIdSchema = z
+  .string()
+  .min(1)
+  .max(40)
+  .regex(/^[a-z0-9-]+$/);
+
+export const AnimeSettingsSchema = z.strictObject({
+  titleLanguage: z.enum(TITLE_LANGUAGES),
+  /** Adult titles hidden from search/import unless enabled. */
+  showAdult: z.boolean(),
+  /** Adult artwork is blurred until revealed (even when showAdult is on). */
+  blurAdultArt: z.boolean(),
+  audioPref: z.enum(AUDIO_PREFS),
+  /** Provider order for anime search ("All sources" uses this order to rank/merge). */
+  providerOrder: z.array(ProviderIdSchema).max(12),
+});
+export type AnimeSettings = z.infer<typeof AnimeSettingsSchema>;
+
+export const ArtworkSettingsSchema = z.strictObject({
+  /** Per media type: art source ids in priority order for bulk auto-pick. */
+  priority: z.record(MediaTypeSchema, z.array(ProviderIdSchema).max(12)),
+  /** Slots auto-filled on import/bulk auto-pick (cover is always filled when available). */
+  autoSlots: z.array(z.enum(ARTWORK_SLOTS)).max(5),
+});
+export type ArtworkSettings = z.infer<typeof ArtworkSettingsSchema>;
+
+export const CurrencyCodeSchema = z
+  .string()
+  .regex(/^[A-Z]{3}$/, 'Use a three-letter currency code, e.g. USD.');
+
 export const AppSettingsSchema = z.strictObject({
   activeThemeId: z.string().min(1).max(80),
   region: RegionSchema,
@@ -478,10 +528,35 @@ export const AppSettingsSchema = z.strictObject({
   quickCapture: QuickCaptureSettingsSchema,
   stats: z.strictObject({ showStreaks: z.boolean() }),
   importUndoRetentionDays: z.number().int().min(1).max(365),
+  /* ---- expansion pack 2 ---- */
+  anime: AnimeSettingsSchema,
+  artwork: ArtworkSettingsSchema,
+  spoilers: z.strictObject({
+    /** Default for items whose spoiler mode is "default". */
+    shieldByDefault: z.boolean(),
+    shieldNotes: z.boolean(),
+  }),
+  value: z.strictObject({ currency: CurrencyCodeSchema }),
+  sessions: z.strictObject({
+    /** Sessions longer than this are flagged for review instead of silently counted. */
+    maxSessionHours: z.number().int().min(1).max(48),
+  }),
+  availability: z.strictObject({
+    leavingSoonDays: z.number().int().min(1).max(90),
+    notifications: z.boolean(),
+  }),
+  recommendations: z.strictObject({ enabled: z.boolean() }),
+  sync: z.strictObject({
+    enabled: z.boolean(),
+    /** Absolute folder path chosen with the OS dialog (never sent to the renderer unvalidated). */
+    folder: z.string().max(1000).nullable(),
+    deviceName: z.string().min(1).max(60),
+  }),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
-export const SettingsPatchSchema = AppSettingsSchema.partial().strict();
+/** `sync` is excluded: the folder may only be chosen through main's native dialog (sync:chooseFolder). */
+export const SettingsPatchSchema = AppSettingsSchema.omit({ sync: true }).partial().strict();
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
 /* ---------- provider requests ---------- */
@@ -559,6 +634,10 @@ export const PickConstraintsSchema = z.strictObject({
   availableMinutes: z.number().int().min(5).max(1_440).nullable(),
   ratingFloor: RatingSchema,
   excludeSkipped: z.boolean(),
+  /* Expansion Pack 2 */
+  moodIds: z.array(IdSchema).max(5).default([]),
+  finishWithinMinutes: z.number().int().min(5).max(100_000).nullable().default(null),
+  respectSeriesOrder: z.boolean().default(false),
 });
 
 export const PickRequestSchema = z.strictObject({
@@ -569,6 +648,8 @@ export const PickRequestSchema = z.strictObject({
   seed: z.number().int().min(0).max(4_294_967_295).nullable(),
 });
 export type PickRequest = z.infer<typeof PickRequestSchema>;
+/** Callers may omit the Expansion Pack 2 constraint fields (they default). */
+export type PickRequestInput = z.input<typeof PickRequestSchema>;
 
 export const PickRespondSchema = z.strictObject({
   historyId: IdSchema,
@@ -606,11 +687,11 @@ export const GoalInputSchema = z
       });
     if (g.metric === 'pages' && g.mediaType !== null && g.mediaType !== 'book')
       ctx.addIssue({ code: 'custom', path: ['metric'], message: 'Pages can only be counted for books.' });
-    if (g.metric === 'episodes' && g.mediaType !== null && g.mediaType !== 'tv')
+    if (g.metric === 'episodes' && g.mediaType !== null && g.mediaType !== 'tv' && g.mediaType !== 'anime')
       ctx.addIssue({
         code: 'custom',
         path: ['metric'],
-        message: 'Episodes can only be counted for TV shows.',
+        message: 'Episodes can only be counted for TV shows and anime.',
       });
     if (g.metric === 'hours' && g.mediaType !== null && g.mediaType !== 'game')
       ctx.addIssue({ code: 'custom', path: ['metric'], message: 'Hours can only be counted for games.' });
@@ -655,3 +736,213 @@ export const ManualListInputSchema = z.strictObject({
   /** Pasted text: one title per line, or CSV with a title column and optional platform column. */
   text: z.string().max(5_000_000),
 });
+
+/* ======================================================================
+ * Expansion Pack 2 — IPC request schemas (validated in main).
+ * ==================================================================== */
+
+export const ArtworkSlotSchema = z.enum(ARTWORK_SLOTS);
+export const ArtworkChooseSchema = z.strictObject({
+  itemId: IdSchema,
+  token: z.string().regex(/^[0-9a-f]{32}$/),
+});
+export const ArtworkSlotRequestSchema = z.strictObject({ itemId: IdSchema, slot: ArtworkSlotSchema });
+export const ArtworkAutoPickSchema = z.strictObject({
+  itemId: IdSchema,
+  slots: z.array(ArtworkSlotSchema).max(5).nullable(),
+});
+export const ArtworkBulkSchema = z.strictObject({
+  itemIds: z.array(IdSchema).min(1).max(500),
+  slots: z.array(ArtworkSlotSchema).max(5).nullable(),
+});
+
+export const AnimeSearchAllSchema = z.strictObject({
+  query: requiredText(LIMITS.searchText, 'Search text'),
+  year: z.number().int().min(1900).max(2200).nullable(),
+});
+
+export const PileTimeManualSchema = z.strictObject({
+  itemId: IdSchema,
+  /** null clears the estimate. */
+  minutes: z.number().int().min(1).max(600_000).nullable(),
+});
+export const PileTimeFitsSchema = z.strictObject({
+  budgetMinutes: z.number().int().min(5).max(100_000),
+  types: z.array(MediaTypeSchema).max(5).nullable(),
+  /** Items must have ALL these moods. */
+  moodIds: z.array(IdSchema).max(5),
+});
+
+const MoodColorSchema = z.enum(['slate', 'blue', 'green', 'amber', 'red', 'purple', 'teal', 'pink']);
+const MoodIconSchema = z.enum([
+  'sofa',
+  'clock',
+  'cloud',
+  'bolt',
+  'heart',
+  'laugh',
+  'users',
+  'repeat',
+  'mountain',
+  'star',
+  'leaf',
+  'moon',
+  'sun',
+  'music',
+  'ghost',
+  'flame',
+]);
+export const MoodCreateSchema = z.strictObject({
+  name: requiredText(40, 'Mood name'),
+  icon: MoodIconSchema,
+  color: MoodColorSchema.nullable(),
+});
+export const MoodUpdateSchema = z.strictObject({
+  id: IdSchema,
+  name: requiredText(40, 'Mood name').optional(),
+  icon: MoodIconSchema.optional(),
+  color: MoodColorSchema.nullable().optional(),
+  hidden: z.boolean().optional(),
+});
+export const MoodReorderSchema = z.strictObject({ ids: z.array(IdSchema).max(60) });
+export const ItemMoodsSchema = z.strictObject({ itemId: IdSchema, moodIds: z.array(IdSchema).max(12) });
+export const BulkMoodSchema = z.strictObject({
+  itemIds: z.array(IdSchema).min(1).max(5000),
+  moodId: IdSchema,
+  add: z.boolean(),
+});
+
+export const ItemPrefsPatchSchema = z.strictObject({
+  itemId: IdSchema,
+  spoilerMode: z.enum(['default', 'shield', 'show']).optional(),
+  notesSpoiler: z.boolean().optional(),
+  hoursSource: z.enum(['manual', 'sessions', 'steam']).optional(),
+  audioPref: z.enum(AUDIO_PREFS).nullable().optional(),
+});
+
+export const RunUpdateSchema = z.strictObject({
+  itemId: IdSchema,
+  runNumber: z.number().int().min(1).max(1000),
+  dateStarted: IsoDateSchema.nullable().optional(),
+  dateCompleted: IsoDateSchema.nullable().optional(),
+  rating: RatingSchema.optional(),
+  notes: z.string().max(20_000).optional(),
+});
+
+const RelationInputSchema = z.enum([
+  'prequel',
+  'sequel',
+  'spin_off',
+  'side_story',
+  'adaptation_of',
+  'adapted_as',
+  'remake_of',
+  'same_franchise',
+]);
+export const RelationAddSchema = z.strictObject({
+  itemId: IdSchema,
+  otherId: IdSchema,
+  relation: RelationInputSchema,
+});
+export const RelationRemoveSchema = z.strictObject({ itemId: IdSchema, relationId: IdSchema });
+export const SuggestionResolveSchema = z.strictObject({
+  itemId: IdSchema,
+  suggestionId: IdSchema,
+  accept: z.boolean(),
+});
+export const FranchiseCreateSchema = z.strictObject({
+  name: requiredText(120, 'Series name'),
+  itemIds: z.array(IdSchema).max(500),
+});
+export const FranchiseUpdateSchema = z.strictObject({
+  id: IdSchema,
+  name: requiredText(120, 'Series name').optional(),
+  respectOrder: z.boolean().optional(),
+});
+export const FranchiseEntriesSchema = z.strictObject({
+  id: IdSchema,
+  entries: z.array(z.strictObject({ itemId: IdSchema, mainline: z.boolean() })).max(500),
+});
+
+export const PurchaseInputSchema = z.strictObject({
+  amountMinor: z.number().int().min(0).max(100_000_000_000),
+  currency: CurrencyCodeSchema,
+  purchasedOn: IsoDateSchema.nullable(),
+  store: nullableText(120),
+  edition: nullableText(200),
+  notes: nullableText(2000),
+});
+export const PurchaseAddSchema = z.strictObject({ itemId: IdSchema, purchase: PurchaseInputSchema });
+export const PurchaseUpdateSchema = z.strictObject({ id: IdSchema, purchase: PurchaseInputSchema });
+
+export const SessionStopSchema = z.strictObject({
+  id: IdSchema,
+  adjustedSeconds: z.number().int().min(0).max(2_592_000).nullable(),
+  note: nullableText(2000),
+});
+export const SessionLogSchema = z.strictObject({
+  itemId: IdSchema,
+  startedAt: IsoDateTimeSchema,
+  seconds: z.number().int().min(60).max(2_592_000),
+  note: nullableText(2000),
+});
+export const SessionEditSchema = z.strictObject({
+  id: IdSchema,
+  seconds: z.number().int().min(0).max(2_592_000).optional(),
+  note: nullableText(2000).optional(),
+});
+
+const AvailabilityKindSchema = z.enum([
+  'owned_digital',
+  'owned_physical',
+  'subscription',
+  'library_loan',
+  'borrowed',
+  'wishlist',
+]);
+const ServiceKindSchema = z.enum(['subscription', 'store', 'library', 'other']);
+export const AvailabilityInputSchema = z.strictObject({
+  kind: AvailabilityKindSchema,
+  serviceId: IdSchema.nullable(),
+  platform: nullableText(80),
+  availableUntil: IsoDateSchema.nullable(),
+  remindDays: z.number().int().min(0).max(365).nullable(),
+  notes: nullableText(2000),
+});
+export const AvailabilityAddSchema = z.strictObject({ itemId: IdSchema, entry: AvailabilityInputSchema });
+export const AvailabilityUpdateSchema = z.strictObject({ id: IdSchema, entry: AvailabilityInputSchema });
+export const ServiceAddSchema = z.strictObject({
+  name: requiredText(80, 'Service name'),
+  kind: ServiceKindSchema,
+});
+export const ServiceUpdateSchema = z.strictObject({
+  id: IdSchema,
+  name: requiredText(80, 'Service name').optional(),
+  kind: ServiceKindSchema.optional(),
+  active: z.boolean().optional(),
+});
+
+export const RecListSchema = z.strictObject({
+  limit: z.number().int().min(1).max(50),
+  types: z.array(MediaTypeSchema).max(5).nullable(),
+});
+export const RecFeedbackSchema = z.strictObject({
+  itemId: IdSchema,
+  kind: z.enum(['dismissed', 'not_interested']),
+});
+
+export const MergePairSchema = z.strictObject({ keepId: IdSchema, removeId: IdSchema });
+export const MergeApplySchema = MergePairSchema.extend({
+  fields: z.record(z.string().max(40), z.enum(['a', 'b', 'both'])),
+});
+
+/** Share card PNG produced locally by the renderer (canvas). Base64, ≤ 6 MB decoded. */
+export const ShareCardSaveSchema = z.strictObject({
+  name: z.string().regex(/^[a-z0-9-]{1,60}$/),
+  pngBase64: z
+    .string()
+    .max(8_000_000)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/),
+});
+
+export const HeatmapSchema = z.strictObject({ year: z.number().int().min(1900).max(2200) });

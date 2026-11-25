@@ -11,6 +11,7 @@
  * local image caching for desktop apps, so we store only the image reference
  * and proxy it on demand; users can always set a local image instead.
  */
+import type { ArtCandidate, ArtSource } from './art-types';
 import { z } from 'zod';
 import type { ProviderRef, SeasonInput } from '../shared/schemas';
 import type { ShowStatus } from '../shared/enums';
@@ -143,7 +144,7 @@ function showStatus(s: string | null): ShowStatus {
 
 const MAX_SEASON_FETCHES = 40;
 
-export const tmdbProvider: MetadataProvider = {
+const tmdbBase: MetadataProvider = {
   id: 'tmdb',
   displayName: 'TMDB',
   supports: ['movie', 'tv'],
@@ -358,3 +359,198 @@ export function sanitizeSeasons(seasons: SeasonInput[]): SeasonInput[] {
       };
     });
 }
+
+/* ---------------------------------------------------------------- anime via TMDB */
+
+/** Anime ids are stored prefixed (`tv:123` / `movie:123`) because TMDB ids are per-kind. */
+export function parseAnimeTmdbId(id: string): { kind: 'tv' | 'movie'; id: string } | null {
+  const m = /^(tv|movie):(\d{1,12})$/.exec(id);
+  return m?.[2] ? { kind: m[1] as 'tv' | 'movie', id: m[2] } : null;
+}
+
+const ANIME_ROLES = new Set(['studio', 'director', 'creator', 'writer']);
+
+/**
+ * TMDB wrapper that adds the `anime` type: anime search covers TMDB TV + movies
+ * (filtered to the Animation genre, id 16, when TMDB reports genres) and
+ * details are mapped onto the anime model. Watch providers work as for TV/movies.
+ */
+export const tmdbProvider: MetadataProvider = {
+  ...tmdbBase,
+  supports: ['movie', 'tv', 'anime'],
+  async search(q, ctx) {
+    if (q.type !== 'anime') return tmdbBase.search.call(tmdbProvider, q, ctx);
+    const [tv, movie] = [
+      await tmdbBase.search.call(tmdbProvider, { ...q, type: 'tv' }, ctx),
+      await tmdbBase.search.call(tmdbProvider, { ...q, type: 'movie' }, ctx),
+    ];
+    if (tv.kind !== 'ok') return tv;
+    const hits = [...tv.value, ...(movie.kind === 'ok' ? movie.value : [])].map((h) => ({
+      ...h,
+      ref: {
+        providerId: 'tmdb',
+        id: `${h.ref.type === 'movie' ? 'movie' : 'tv'}:${h.ref.id}`,
+        type: 'anime' as const,
+      },
+      type: 'anime' as const,
+      creators: [h.ref.type === 'movie' ? 'Movie' : 'TV'],
+    }));
+    return { kind: 'ok', value: hits };
+  },
+  async fetchDetails(ref, ctx) {
+    if (ref.type !== 'anime') return tmdbBase.fetchDetails.call(tmdbProvider, ref, ctx);
+    const parsed = parseAnimeTmdbId(ref.id);
+    if (!parsed) return { kind: 'notFound' };
+    const r = await tmdbBase.fetchDetails.call(
+      tmdbProvider,
+      { ...ref, id: parsed.id, type: parsed.kind },
+      ctx,
+    );
+    if (r.kind !== 'ok') return r;
+    const src = r.value;
+    const m = src.meta;
+    const isMovie = parsed.kind === 'movie';
+    const episodeCount = isMovie
+      ? 1
+      : src.seasons
+          .filter((s) => s.number > 0)
+          .reduce((n, s) => n + (s.episodeCountKnown ?? s.episodes.length), 0) || null;
+    const meta = finalizeMeta('anime', {
+      ...m,
+      creators: m.creators.filter((c) => ANIME_ROLES.has(c.role)),
+      externalIds: m.externalIds.map((e) =>
+        e.kind === 'tmdb' ? { kind: 'tmdb' as const, value: `${parsed.kind}:${e.value}` } : e,
+      ),
+      showStatus: isMovie ? 'ended' : m.showStatus,
+      episodeRuntime: isMovie ? m.runtimeMinutes : m.episodeRuntime,
+      animeFormat: isMovie ? 'movie' : 'tv',
+      airingStatus: isMovie
+        ? 'finished'
+        : m.showStatus === 'ended'
+          ? 'finished'
+          : m.showStatus === 'returning'
+            ? 'releasing'
+            : null,
+      episodeCount,
+      titleEnglish: m.title,
+    });
+    if (!meta) return { kind: 'malformedResponse', detail: 'Missing title.' };
+    const seasons: SeasonInput[] = isMovie
+      ? [
+          {
+            number: 1,
+            title: null,
+            episodeCountKnown: 1,
+            episodes: [
+              { number: 1, title: meta.title, airDate: meta.releaseDate, runtime: m.runtimeMinutes },
+            ],
+          },
+        ]
+      : src.seasons;
+    return { kind: 'ok', value: { ...src, ref, meta, seasons } };
+  },
+  async discoverLinks(ref, region, ctx) {
+    const base = tmdbBase.discoverLinks;
+    if (!base) return { kind: 'notFound' };
+    if (ref.type !== 'anime') return base.call(tmdbProvider, ref, region, ctx);
+    const parsed = parseAnimeTmdbId(ref.id);
+    if (!parsed) return { kind: 'notFound' };
+    return base.call(tmdbProvider, { ...ref, id: parsed.id, type: parsed.kind }, region, ctx);
+  },
+};
+
+/* ---------------------------------------------------------------- artwork picker source */
+
+const ImagesSchema = z.object({
+  posters: looseArray(
+    z.object({
+      file_path: looseString,
+      width: looseNumber,
+      height: looseNumber,
+      iso_639_1: looseString,
+      vote_average: looseNumber,
+    }),
+  ),
+  backdrops: looseArray(
+    z.object({
+      file_path: looseString,
+      width: looseNumber,
+      height: looseNumber,
+      iso_639_1: looseString,
+      vote_average: looseNumber,
+    }),
+  ),
+  logos: looseArray(
+    z.object({
+      file_path: looseString,
+      width: looseNumber,
+      height: looseNumber,
+      iso_639_1: looseString,
+      vote_average: looseNumber,
+    }),
+  ),
+});
+
+/** TMDB image paths are "/abc.jpg"; anything else is rejected. */
+const TMDB_PATH_RE = /^\/[A-Za-z0-9_-]{5,64}\.(?:jpg|png)$/;
+
+export const tmdbArtSource: ArtSource = {
+  id: 'tmdb',
+  displayName: 'TMDB',
+  supports: ['movie', 'tv', 'anime'],
+  slots: ['cover', 'background', 'logo'],
+  requiresApiKey: true,
+  keyFields: ['apiKey'],
+  signupUrl: 'https://www.themoviedb.org/settings/api',
+  termsNote: null,
+  attribution: tmdbBase.attribution,
+  rateLimit: tmdbBase.rateLimit,
+  cachingPolicy: 'remote-only',
+  hosts: ['image.tmdb.org'],
+  isConfigured: tmdbBase.isConfigured,
+  async candidates(lookup, ctx) {
+    if (!tmdbArtSource.isConfigured(ctx.keys)) return { kind: 'notConfigured' };
+    const raw = lookup.externalIds.find((e) => e.kind === 'tmdb')?.value ?? '';
+    const pre = parseAnimeTmdbId(raw);
+    const kind = pre?.kind ?? (lookup.type === 'tv' ? 'tv' : lookup.type === 'movie' ? 'movie' : null);
+    const id = pre?.id ?? (/^\d{1,12}$/.test(raw) ? raw : null);
+    if (!kind || !id) return { kind: 'ok', value: [] };
+    const a = auth(ctx.keys, `${API}/${kind}/${id}/images?include_image_language=en,ja,null`);
+    const r = await requestJson(
+      ctx.http,
+      ctx.limiter,
+      { url: a.url, headers: a.headers, ...(ctx.signal ? { signal: ctx.signal } : {}) },
+      ImagesSchema,
+    );
+    if (r.kind === 'notFound') return { kind: 'ok', value: [] };
+    if (r.kind !== 'ok') return r;
+    const out: ArtCandidate[] = [];
+    const add = (
+      list: z.infer<typeof ImagesSchema>['posters'],
+      slot: ArtCandidate['slot'],
+      thumb: string,
+    ) => {
+      for (const p of list.slice(0, 30)) {
+        if (!p.file_path || !TMDB_PATH_RE.test(p.file_path)) continue;
+        out.push({
+          sourceId: 'tmdb',
+          slot,
+          url: `${IMG}/original${p.file_path}`,
+          thumbUrl: `${IMG}/${thumb}${p.file_path}`,
+          width: p.width,
+          height: p.height,
+          language: p.iso_639_1,
+          attribution: 'TMDB',
+          licenseNote: null,
+          assetId: p.file_path,
+          adult: false,
+          score: p.vote_average,
+        });
+      }
+    };
+    add(r.value.posters, 'cover', 'w185');
+    add(r.value.backdrops, 'background', 'w300');
+    add(r.value.logos, 'logo', 'w185');
+    return { kind: 'ok', value: out };
+  },
+};

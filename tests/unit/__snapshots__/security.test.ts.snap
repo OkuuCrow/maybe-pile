@@ -2,6 +2,9 @@
 
 exports[`preload API surface > matches the documented snapshot (namespaces → methods → channels) 1`] = `
 {
+  "anime": {
+    "searchAll": "anime:searchAll",
+  },
   "app": {
     "acknowledgeNotices": "app:acknowledgeNotices",
     "chooseBackupFolder": "app:chooseBackupFolder",
@@ -11,9 +14,27 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "openExternal": "app:openExternal",
   },
   "artwork": {
+    "autoPick": "artwork:autoPick",
+    "bulkAutoPick": "artwork:bulkAutoPick",
+    "choose": "artwork:choose",
     "chooseLocal": "artwork:chooseLocal",
+    "clearSlot": "artwork:clearSlot",
+    "gallery": "artwork:gallery",
     "remove": "artwork:remove",
     "retry": "artwork:retry",
+    "revert": "artwork:revert",
+    "slots": "artwork:slots",
+  },
+  "availability": {
+    "add": "availability:add",
+    "addService": "availability:addService",
+    "forItem": "availability:forItem",
+    "leavingSoon": "availability:leavingSoon",
+    "remove": "availability:delete",
+    "removeService": "availability:removeService",
+    "services": "availability:services",
+    "update": "availability:update",
+    "updateService": "availability:updateService",
   },
   "batches": {
     "list": "batches:list",
@@ -39,6 +60,14 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "importPreview": "data:importPreview",
     "restoreInternalPreview": "data:restoreInternalPreview",
   },
+  "franchises": {
+    "create": "franchises:create",
+    "get": "franchises:get",
+    "list": "franchises:list",
+    "remove": "franchises:delete",
+    "setEntries": "franchises:setEntries",
+    "update": "franchises:update",
+  },
   "goals": {
     "archive": "goals:archive",
     "list": "goals:list",
@@ -50,6 +79,19 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "overview": "health:overview",
     "snooze": "health:snooze",
     "unsnooze": "health:unsnooze",
+  },
+  "itemExtras": {
+    "addRelation": "itemExtras:addRelation",
+    "franchisesForItem": "itemExtras:franchisesForItem",
+    "prefs": "itemExtras:prefs",
+    "relations": "itemExtras:relations",
+    "removeRelation": "itemExtras:removeRelation",
+    "resolveSuggestion": "itemExtras:resolveSuggestion",
+    "runs": "itemExtras:runs",
+    "setPrefs": "itemExtras:setPrefs",
+    "streaming": "itemExtras:streaming",
+    "suggestions": "itemExtras:suggestions",
+    "updateRun": "itemExtras:updateRun",
   },
   "items": {
     "acceptSuggestion": "items:acceptSuggestion",
@@ -88,11 +130,36 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "save": "lists:save",
     "setMembership": "lists:setMembership",
   },
+  "merge": {
+    "apply": "merge:apply",
+    "dismiss": "merge:dismiss",
+    "lastUndoable": "merge:lastUndoable",
+    "pairs": "merge:pairs",
+    "preview": "merge:preview",
+    "undo": "merge:undo",
+  },
+  "moods": {
+    "bulk": "moods:bulk",
+    "create": "moods:create",
+    "forItem": "moods:forItem",
+    "list": "moods:list",
+    "remove": "moods:delete",
+    "reorder": "moods:reorder",
+    "setForItem": "moods:setForItem",
+    "update": "moods:update",
+  },
   "pick": {
     "clearSkips": "pick:clearSkips",
     "history": "pick:history",
     "respond": "pick:respond",
     "roll": "pick:roll",
+  },
+  "pileTime": {
+    "fetchIgdb": "pileTime:fetchIgdb",
+    "fits": "pileTime:fits",
+    "item": "pileTime:item",
+    "setManual": "pileTime:setManual",
+    "totals": "pileTime:totals",
   },
   "progress": {
     "add": "progress:add",
@@ -128,9 +195,28 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "refreshPreview": "radar:refreshPreview",
     "upcoming": "radar:upcoming",
   },
+  "recs": {
+    "clearFeedback": "recs:clearFeedback",
+    "feedback": "recs:feedback",
+    "list": "recs:list",
+  },
+  "sessions": {
+    "edit": "sessions:edit",
+    "forItem": "sessions:forItem",
+    "log": "sessions:log",
+    "open": "sessions:open",
+    "pause": "sessions:pause",
+    "remove": "sessions:delete",
+    "resume": "sessions:resume",
+    "start": "sessions:start",
+    "stop": "sessions:stop",
+  },
   "settings": {
     "get": "settings:get",
     "update": "settings:update",
+  },
+  "share": {
+    "saveCard": "share:saveCard",
   },
   "sources": {
     "applyPlaytime": "sources:applyPlaytime",
@@ -152,8 +238,19 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
   "stats": {
     "exportCsv": "stats:exportCsv",
     "get": "stats:get",
+    "heatmap": "stats:heatmap",
     "saveImage": "stats:saveImage",
     "yearInReview": "stats:yearInReview",
+  },
+  "sync": {
+    "apply": "sync:apply",
+    "chooseFolder": "sync:chooseFolder",
+    "conflicts": "sync:conflicts",
+    "disable": "sync:disable",
+    "preview": "sync:preview",
+    "resolve": "sync:resolve",
+    "setDeviceName": "sync:setDeviceName",
+    "status": "sync:status",
   },
   "themes": {
     "active": "themes:active",
@@ -173,6 +270,13 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "profiles": "tracker:profiles",
     "remap": "tracker:remap",
     "saveProfile": "tracker:saveProfile",
+  },
+  "value": {
+    "add": "value:add",
+    "list": "value:list",
+    "remove": "value:delete",
+    "summary": "value:summary",
+    "update": "value:update",
   },
 }
 `;

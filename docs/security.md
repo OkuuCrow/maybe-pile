@@ -74,7 +74,7 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `app:chooseBackupFolder` | `app.chooseBackupFolder` | Choose default export/backup folder | — | `Result<…>` | folder dialog → main-owned setting |
 | `app:acknowledgeNotices` | `app.acknowledgeNotices` | Dismiss upgrade/recovery notices | — | `Result<…>` | in-memory |
 | `settings:get` | `settings.get` | Read settings | — | `Result<…>` | none |
-| `settings:update` | `settings.update` | Update non-secret settings (strict schema) | { activeThemeId, region, autoApplySuggestions, libraryView, libraryQuery, providerEnabled, csvBom, lastSeenSchemaVersion, upNextMax, pick, pileHealth, releaseRadar, quickCapture, stats, importUndoRetentionDays } | `Result<…>` | DB write |
+| `settings:update` | `settings.update` | Update non-secret settings (strict schema) | { activeThemeId, region, autoApplySuggestions, libraryView, libraryQuery, providerEnabled, csvBom, lastSeenSchemaVersion, upNextMax, pick, pileHealth, releaseRadar, quickCapture, stats, importUndoRetentionDays, anime, artwork, spoilers, value, sessions, availability, recommendations } | `Result<…>` | DB write |
 | `items:query` | `items.query` | Search/filter/sort library page | { text, types, statuses, tags, tagMode, ratingMin, ratingMax, addedFrom, addedTo, sort, direction, offset, limit, listId, upNextOnly, health } | `Result<…>` | none |
 | `items:get` | `items.get` | Item detail | { id } | `Result<…>` | none |
 | `items:create` | `items.create` | Create item (duplicate check) | { type, meta, personal, seasons, milestones, allowDuplicate } | `Result<…>` | DB write |
@@ -113,6 +113,7 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `stats:yearInReview` | `stats.yearInReview` | Year in Review summary | { year } | `Result<…>` | none |
 | `stats:exportCsv` | `stats.exportCsv` | Save one chart's data as CSV | { chart, year } | `Result<…>` | save dialog → file write |
 | `stats:saveImage` | `stats.saveImage` | Save a chart region as PNG | { name, rect } | `Result<…>` | window capture → save dialog → file write |
+| `stats:heatmap` | `stats.heatmap` | Completion heatmap for a year (all runs) | { year } | `Result<…>` | none |
 | `radar:upcoming` | `radar.upcoming` | Upcoming releases | — | `Result<…>` | none |
 | `radar:refreshPreview` | `radar.refreshPreview` | Re-fetch release dates (diff only) | — | `Result<…>` | network (provider, rate-limited) |
 | `radar:refreshApply` | `radar.refreshApply` | Apply chosen release-date updates | { token, choices } | `Result<…>` | DB write |
@@ -179,6 +180,85 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `artwork:chooseLocal` | `artwork.chooseLocal` | Pick a local image | { itemId } | `Result<…>` | open dialog → artwork file + DB |
 | `artwork:remove` | `artwork.remove` | Remove item artwork | { itemId } | `Result<…>` | DB write + artwork GC |
 | `artwork:retry` | `artwork.retry` | Cache remote artwork (cache-allowed providers) | { itemId } | `Result<…>` | network + artwork file |
+| `artwork:slots` | `artwork.slots` | Selected art per slot (cover/banner/logo/icon/background) | { itemId } | `Result<…>` | none |
+| `artwork:gallery` | `artwork.gallery` | Fetch candidate art from all sources in parallel (tokens only) | { itemId } | `Result<…>` | network (allowlisted art sources) |
+| `artwork:choose` | `artwork.choose` | Apply a gallery choice as the user’s selection | { itemId, token } | `Result<…>` | image fetch (cache-allowed only) → DB write |
+| `artwork:revert` | `artwork.revert` | Clear the user’s choice and auto-pick again | { itemId, slot } | `Result<…>` | network → DB write |
+| `artwork:clearSlot` | `artwork.clearSlot` | Remove the image from a slot | { itemId, slot } | `Result<…>` | DB write |
+| `artwork:autoPick` | `artwork.autoPick` | Auto-pick art for an item (never over a user choice) | { itemId, slots } | `Result<…>` | network → DB write |
+| `artwork:bulkAutoPick` | `artwork.bulkAutoPick` | Auto-pick art for many items (sequential, rate-limited) | { itemIds, slots } | `Result<…>` | network → DB writes |
+| `anime:searchAll` | `anime.searchAll` | Search all enabled anime sources and merge by cross ids | { query, year } | `Result<…>` | network (enabled anime sources) |
+| `pileTime:item` | `pileTime.item` | Time estimate for an item, with source and confidence | { itemId } | `Result<…>` | none |
+| `pileTime:totals` | `pileTime.totals` | Backlog time totals by type and confidence | — | `Result<…>` | none |
+| `pileTime:fits` | `pileTime.fits` | Unfinished items that fit a time budget | { budgetMinutes, types, moodIds } | `Result<…>` | none |
+| `pileTime:setManual` | `pileTime.setManual` | Set/clear the user’s own estimate | { itemId, minutes } | `Result<…>` | DB write |
+| `pileTime:fetchIgdb` | `pileTime.fetchIgdb` | Fetch typical time-to-beat from IGDB (user keys) | { itemId } | `Result<…>` | network (IGDB) → DB write |
+| `moods:list` | `moods.list` | List moods | — | `Result<…>` | none |
+| `moods:create` | `moods.create` | Create a custom mood | { name, icon, color } | `Result<…>` | DB write |
+| `moods:update` | `moods.update` | Rename/recolor/hide a mood | { id, name, icon, color, hidden } | `Result<…>` | DB write |
+| `moods:delete` | `moods.remove` | Delete a custom mood | { id } | `Result<…>` | DB write |
+| `moods:reorder` | `moods.reorder` | Reorder moods | { ids } | `Result<…>` | DB write |
+| `moods:forItem` | `moods.forItem` | Moods on an item | { itemId } | `Result<…>` | none |
+| `moods:setForItem` | `moods.setForItem` | Replace an item’s moods | { itemId, moodIds } | `Result<…>` | DB write |
+| `moods:bulk` | `moods.bulk` | Add/remove a mood on many items | { itemIds, moodId, add } | `Result<…>` | DB transaction |
+| `itemExtras:prefs` | `itemExtras.prefs` | Item preferences (spoilers, hours source, sub/dub) | { itemId } | `Result<…>` | none |
+| `itemExtras:setPrefs` | `itemExtras.setPrefs` | Update item preferences | { itemId, spoilerMode, notesSpoiler, hoursSource, audioPref } | `Result<…>` | DB write |
+| `itemExtras:runs` | `itemExtras.runs` | Run (rewatch/replay) history | { itemId } | `Result<…>` | DB write (syncs current run) |
+| `itemExtras:updateRun` | `itemExtras.updateRun` | Edit a finished run | { itemId, runNumber, dateStarted, dateCompleted, rating, notes } | `Result<…>` | DB write |
+| `itemExtras:streaming` | `itemExtras.streaming` | Provider-documented streaming links (allowlisted hosts) | { itemId } | `Result<…>` | none |
+| `itemExtras:relations` | `itemExtras.relations` | Linked items (sequel, spin-off…) | { itemId } | `Result<…>` | none |
+| `itemExtras:addRelation` | `itemExtras.addRelation` | Link two items | { itemId, otherId, relation } | `Result<…>` | DB write |
+| `itemExtras:removeRelation` | `itemExtras.removeRelation` | Unlink two items | { itemId, relationId } | `Result<…>` | DB write |
+| `itemExtras:suggestions` | `itemExtras.suggestions` | Pending provider relation suggestions | { itemId } | `Result<…>` | none |
+| `itemExtras:resolveSuggestion` | `itemExtras.resolveSuggestion` | Accept/dismiss a relation suggestion | { itemId, suggestionId, accept } | `Result<…>` | DB write |
+| `itemExtras:franchisesForItem` | `itemExtras.franchisesForItem` | Series containing an item, with Next in series | { itemId } | `Result<…>` | none |
+| `franchises:list` | `franchises.list` | List series/franchises | — | `Result<…>` | none |
+| `franchises:get` | `franchises.get` | Series detail | { id } | `Result<…>` | none |
+| `franchises:create` | `franchises.create` | Create a series | { name, itemIds } | `Result<…>` | DB transaction |
+| `franchises:update` | `franchises.update` | Rename / toggle order | { id, name, respectOrder } | `Result<…>` | DB write |
+| `franchises:setEntries` | `franchises.setEntries` | Replace ordered entries | { id, entries } | `Result<…>` | DB transaction |
+| `franchises:delete` | `franchises.remove` | Delete a series (items kept) | { id } | `Result<…>` | DB write |
+| `value:list` | `value.list` | Purchases for an item | { itemId } | `Result<…>` | none |
+| `value:add` | `value.add` | Add a purchase (minor units + currency) | { itemId, purchase } | `Result<…>` | DB write |
+| `value:update` | `value.update` | Edit a purchase | { id, purchase } | `Result<…>` | DB write |
+| `value:delete` | `value.remove` | Delete a purchase | { id } | `Result<…>` | DB write |
+| `value:summary` | `value.summary` | Per-currency totals (no conversion) | — | `Result<…>` | none |
+| `sessions:open` | `sessions.open` | Running/paused timers | — | `Result<…>` | none |
+| `sessions:forItem` | `sessions.forItem` | Sessions for an item | { itemId } | `Result<…>` | none |
+| `sessions:start` | `sessions.start` | Start a timer (pauses any running timer) | { itemId } | `Result<…>` | DB transaction |
+| `sessions:pause` | `sessions.pause` | Pause a timer | { id } | `Result<…>` | DB write |
+| `sessions:resume` | `sessions.resume` | Resume a timer | { id } | `Result<…>` | DB transaction |
+| `sessions:stop` | `sessions.stop` | Stop a timer (optional correction) | { id, adjustedSeconds, note } | `Result<…>` | DB transaction (+ hours if source = sessions) |
+| `sessions:log` | `sessions.log` | Log a past session | { itemId, startedAt, seconds, note } | `Result<…>` | DB transaction |
+| `sessions:edit` | `sessions.edit` | Edit a finished session | { id, seconds, note } | `Result<…>` | DB transaction |
+| `sessions:delete` | `sessions.remove` | Delete a session | { id } | `Result<…>` | DB transaction |
+| `availability:services` | `availability.services` | List services | — | `Result<…>` | none |
+| `availability:addService` | `availability.addService` | Add a service | { name, kind } | `Result<…>` | DB write |
+| `availability:updateService` | `availability.updateService` | Edit a service | { id, name, kind, active } | `Result<…>` | DB write |
+| `availability:removeService` | `availability.removeService` | Delete a service | { id } | `Result<…>` | DB write |
+| `availability:forItem` | `availability.forItem` | Ownership/availability for an item | { itemId } | `Result<…>` | none |
+| `availability:add` | `availability.add` | Add an availability entry | { itemId, entry } | `Result<…>` | DB write |
+| `availability:update` | `availability.update` | Edit an availability entry | { id, entry } | `Result<…>` | DB write |
+| `availability:delete` | `availability.remove` | Delete an availability entry | { id } | `Result<…>` | DB write |
+| `availability:leavingSoon` | `availability.leavingSoon` | Unfinished items whose access ends soon | — | `Result<…>` | none |
+| `recs:list` | `recs.list` | Offline, explained recommendations from the pile | { limit, types } | `Result<…>` | none |
+| `recs:feedback` | `recs.feedback` | Not now / Not interested | { itemId, kind } | `Result<…>` | DB write |
+| `recs:clearFeedback` | `recs.clearFeedback` | Reset recommendation feedback | — | `Result<…>` | DB write |
+| `merge:pairs` | `merge.pairs` | Possible duplicate pairs | — | `Result<…>` | none |
+| `merge:dismiss` | `merge.dismiss` | Mark a pair as not duplicates | { keepId, removeId } | `Result<…>` | DB write |
+| `merge:preview` | `merge.preview` | Field-by-field merge preview | { keepId, removeId } | `Result<…>` | none |
+| `merge:apply` | `merge.apply` | Merge two items (full snapshot for undo) | { keepId, removeId, fields } | `Result<…>` | DB transaction |
+| `merge:lastUndoable` | `merge.lastUndoable` | Most recent undoable merge | — | `Result<…>` | none |
+| `merge:undo` | `merge.undo` | Undo a merge from its snapshot | { id } | `Result<…>` | DB transaction |
+| `share:saveCard` | `share.saveCard` | Save a locally drawn share card PNG (validated in main) | { name, pngBase64 } | `Result<…>` | save dialog → file write |
+| `sync:status` | `sync.status` | Sync folder status, devices, open conflicts | — | `Result<…>` | reads sync folder |
+| `sync:chooseFolder` | `sync.chooseFolder` | Choose the sync folder (native dialog in main) | — | `Result<…>` | folder dialog → settings |
+| `sync:disable` | `sync.disable` | Turn sync off | — | `Result<…>` | settings write |
+| `sync:setDeviceName` | `sync.setDeviceName` | Rename this device | { name } | `Result<…>` | settings write |
+| `sync:preview` | `sync.preview` | Dry run: outgoing, incoming, conflicts (writes nothing) | — | `Result<…>` | reads sync folder |
+| `sync:apply` | `sync.apply` | Apply sync (snapshot → transaction → append own log) | — | `Result<…>` | DB snapshot + transaction; writes own .jsonl |
+| `sync:conflicts` | `sync.conflicts` | Open sync conflicts | — | `Result<…>` | none |
+| `sync:resolve` | `sync.resolve` | Keep mine / take theirs | { id, choice } | `Result<…>` | DB transaction |
 | `themes:list` | `themes.list` | List themes | — | `Result<…>` | none |
 | `themes:get` | `themes.get` | Theme tokens + contrast warnings | { id } | `Result<…>` | none |
 | `themes:active` | `themes.active` | Resolved active theme (with fallback) | — | `Result<…>` | may reset setting to fallback |
@@ -202,3 +282,15 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `data:backupList` | `data.backupList` | List safety snapshots | — | `Result<…>` | none |
 | `data:restoreInternalPreview` | `data.restoreInternalPreview` | Preview restoring a safety snapshot | { label } | `Result<…>` | staging in temp folder |
 <!-- IPC-TABLE:END -->
+
+
+## Expansion Pack 2 additions
+
+- **New keys:** MyAnimeList client ID, fanart.tv personal/project keys, SteamGridDB key. All are stored with `safeStorage` (like TMDB/IGDB) and sent only as request **headers** (`X-MAL-CLIENT-ID`, `client-key`/`api-key`, `Authorization: Bearer`), never in URLs, logs or exports.
+- **Image fetching** is main-process only, with per-source host allowlists. Redirects are manual: at most 3 hops, same host or declared host only. Electron's `net.fetch` can't do manual redirects, so `src/main/electron-fetch.ts` uses `net.request` and its `redirect` event; this is verified in `tests/e2e/pack2.spec.ts`. Further limits: byte caps, header-based pixel caps before decoding, a magic-byte allowlist (SVG rejected), re-encoding to strip EXIF, and SHA-256 file names. The remote proxy (`maybepile-art://remote|preview`) applies the same magic-byte and dimension checks before passing bytes to the renderer.
+- **The renderer never sees remote image URLs:** artwork candidates are 128-bit random tokens, mapped in main.
+- **MAL XML import** rejects DOCTYPE/ENTITY declarations (XXE), decodes only built-in entities, and caps decompressed size (60 MB, checking the gzip ISIZE first) and entry count.
+- **Share card PNGs** from the renderer are re-validated in main (magic bytes, dimensions, size) before being written through the save dialog.
+- **E2E hook:** when `MAYBEPILE_E2E_HOOKS=1`, main exposes its HTTP client on a main-process global for the Playwright suite. The renderer can't reach main globals, and the variable is never set in normal use.
+- **IPC:** 80 new channels, each with a strict Zod request schema validated in main. The table above is regenerated by `scripts/gen-ipc-docs.ts`, and the preload snapshot test was updated (additions only).
+- **Sync folder:** the path comes only from main's native folder dialog. `settings:update` rejects the `sync` key. Logs of other devices are size-capped and validated line by line (Zod). Only file names matching `<uuid>.jsonl` are read, and only this device's own file is written (temp file + rename). A database snapshot is taken before every apply.

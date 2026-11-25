@@ -5,6 +5,12 @@
  */
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
+  AIRING_STATUSES,
+  AIRING_STATUS_LABELS,
+  ANIME_FORMATS,
+  ANIME_FORMAT_LABELS,
+  ANIME_SEASONS,
+  ANIME_SEASON_LABELS,
   BOOK_FORMATS,
   CREATOR_ROLES,
   EXTERNAL_ID_KINDS,
@@ -93,6 +99,7 @@ const EXT_LABELS: Record<ExternalIdKind, string> = {
   wikidata: 'Wikidata ID (Q…)',
   anilist: 'AniList ID',
   mal: 'MyAnimeList ID',
+  kitsu: 'Kitsu ID',
 };
 
 /** Maps a schema/server path like "meta.title" to the form control id. */
@@ -362,6 +369,93 @@ export function ItemForm({
             />
           </div>
         )}
+        {t === 'anime' && (
+          <div className="form-grid">
+            <TextField
+              label="Romaji title"
+              value={v.meta.titleRomaji ?? ''}
+              onChange={(x) => meta('titleRomaji', x || null)}
+            />
+            <TextField
+              label="English title"
+              value={v.meta.titleEnglish ?? ''}
+              onChange={(x) => meta('titleEnglish', x || null)}
+            />
+            <TextField
+              label="Native title"
+              value={v.meta.titleNative ?? ''}
+              onChange={(x) => meta('titleNative', x || null)}
+            />
+            <SelectField
+              label="Format"
+              value={v.meta.animeFormat ?? ''}
+              onChange={(x) => meta('animeFormat', x === '' ? null : x)}
+              options={[
+                { value: '' as const, label: 'Unknown' },
+                ...ANIME_FORMATS.map((f) => ({ value: f, label: ANIME_FORMAT_LABELS[f] })),
+              ]}
+            />
+            <SelectField
+              label="Airing status"
+              value={v.meta.airingStatus ?? ''}
+              onChange={(x) => meta('airingStatus', x === '' ? null : x)}
+              options={[
+                { value: '' as const, label: 'Unknown' },
+                ...AIRING_STATUSES.map((f) => ({ value: f, label: AIRING_STATUS_LABELS[f] })),
+              ]}
+            />
+            <SelectField
+              label="Season"
+              value={v.meta.animeSeason ?? ''}
+              onChange={(x) => meta('animeSeason', x === '' ? null : x)}
+              options={[
+                { value: '' as const, label: 'Unknown' },
+                ...ANIME_SEASONS.map((f) => ({ value: f, label: ANIME_SEASON_LABELS[f] })),
+              ]}
+            />
+            <NumberField
+              label="Season year"
+              value={v.meta.seasonYear}
+              onChange={(x) => meta('seasonYear', x)}
+              min={1900}
+              error={err('meta.seasonYear')}
+            />
+            <TextField
+              label="Source material"
+              hint="For example Manga, Light novel, Original."
+              value={v.meta.sourceMaterial ?? ''}
+              onChange={(x) => meta('sourceMaterial', x || null)}
+            />
+            <NumberField
+              label="Episode count"
+              hint="Leave empty if still airing or unknown."
+              value={v.meta.episodeCount}
+              onChange={(x) => meta('episodeCount', x)}
+              min={0}
+              error={err('meta.episodeCount')}
+            />
+            <NumberField
+              label="Episode length (minutes)"
+              value={v.meta.episodeRuntime}
+              onChange={(x) => meta('episodeRuntime', x)}
+              min={0}
+              error={err('meta.episodeRuntime')}
+            />
+            <TextField
+              label="Last air date"
+              hint="Partial dates are fine."
+              value={v.meta.lastAirDate ?? ''}
+              onChange={(x) => meta('lastAirDate', x.trim() || null)}
+              error={err('meta.lastAirDate')}
+            />
+            <Checkbox
+              label="Adult content"
+              hint="Adult titles are hidden from search unless enabled in Settings, and their artwork is blurred."
+              checked={v.meta.isAdult}
+              onChange={(x) => meta('isAdult', x)}
+            />
+          </div>
+        )}
         {t === 'book' && (
           <div className="form-grid">
             <NumberField
@@ -406,7 +500,7 @@ export function ItemForm({
         />
       </fieldset>
 
-      {mode === 'create' && t === 'tv' && (
+      {mode === 'create' && (t === 'tv' || t === 'anime') && (
         <fieldset className="form-section">
           <legend>Seasons (optional)</legend>
           <p className="field-hint">Add seasons now or later. Leave the episode count empty if unknown.</p>

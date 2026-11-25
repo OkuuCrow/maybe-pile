@@ -27,7 +27,8 @@ import type { AppInfo } from '../shared/types';
 import { LATEST_SCHEMA_VERSION } from '../db/migrate';
 import { writeSettings } from '../db/repositories/config-repo';
 import { createFetchClient, type HttpClient } from '../providers/http';
-import { ARTWORK_HOSTS } from '../providers/registry';
+import { createElectronFetch } from './electron-fetch';
+import { ARTWORK_HOSTS, ARTWORK_REDIRECT_HOSTS } from '../providers/registry';
 import { checkExternalUrl } from '../domain/links';
 import { buildHandlers, decodeText, type Platform } from './ipc/handlers';
 import { QuickCaptureShortcut } from './quick-capture';
@@ -48,7 +49,15 @@ import {
   resolveRendererPath,
   secureWebPreferences,
 } from './security/policy';
-import { ArtworkService, type ImageKind, type ImageProcessor } from './services/artwork-service';
+import {
+  ArtworkService,
+  imageDimensions,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_PIXELS,
+  sniffImage,
+  type ImageKind,
+  type ImageProcessor,
+} from './services/artwork-service';
 import { BackupService } from './services/backup-service';
 import { CatalogService } from './services/catalog-service';
 import { pathsFor, systemClock, type ServiceContext } from './services/context';
@@ -116,22 +125,33 @@ const runningMarker = join(location.dir, '.running');
 /* ------------------------------------------------------------------ adapters */
 
 const imageProcessor: ImageProcessor = {
-  process(buf: Uint8Array, kind: ImageKind) {
+  process(buf: Uint8Array, kind: ImageKind, opts?: { maxWidth?: number }) {
+    // Header dimensions were already checked (assertSafeDimensions) before we decode.
     const img = nativeImage.createFromBuffer(Buffer.from(buf));
     if (img.isEmpty()) return null;
     const { width, height } = img.getSize();
     if (width < 1 || height < 1 || width > 12_000 || height > 12_000) return null;
-    // Re-encoding drops EXIF/metadata. Large images are scaled down to 1200px wide.
-    const full = width > 1200 ? img.resize({ width: 1200, quality: 'best' }) : img;
+    // Re-encoding drops EXIF/metadata. Large images are scaled down (1200px wide; 2560 for banners/backgrounds).
+    const maxWidth = opts?.maxWidth ?? 1200;
+    const full = width > maxWidth ? img.resize({ width: maxWidth, quality: 'best' }) : img;
     const thumb = img.resize({ width: Math.min(320, width), quality: 'good' }).toJPEG(80);
     const asPng = kind !== 'jpeg';
-    return { data: asPng ? full.toPNG() : full.toJPEG(88), ext: asPng ? 'png' : 'jpg', thumb };
+    const size = full.getSize();
+    return {
+      data: asPng ? full.toPNG() : full.toJPEG(88),
+      ext: asPng ? 'png' : 'jpg',
+      thumb,
+      width: size.width,
+      height: size.height,
+    };
   },
 };
 
-const httpClient: HttpClient = createFetchClient((url, init) =>
-  net.fetch(url, { ...init, bypassCustomProtocolHandlers: true }),
-);
+const httpClient: HttpClient = createFetchClient(createElectronFetch(net));
+// E2E-only hook (env-gated, main-process global, unreachable from the renderer):
+// lets the Playwright suite exercise the real Electron HTTP adapter.
+if (process.env['MAYBEPILE_E2E_HOOKS'] === '1')
+  (globalThis as { __maybePileHttp?: HttpClient }).__maybePileHttp = httpClient;
 
 const platform: Platform = {
   async saveDialog(opts) {
@@ -186,10 +206,24 @@ async function proxyImage(url: string): Promise<Response> {
       timeoutMs: 10_000,
       maxBytes: 8 * 1024 * 1024,
       headers: { Accept: 'image/*' },
+      redirectHosts: ARTWORK_REDIRECT_HOSTS,
     });
-    const type = res.headers['content-type'] ?? '';
-    if (res.status !== 200 || !/^image\/(png|jpeg|webp|gif)/i.test(type))
+    const declared = res.headers['content-type'] ?? '';
+    if (res.status !== 200 || !/^image\/(png|jpeg|webp|gif)/i.test(declared))
       return new Response(null, { status: 502 });
+    // Never trust the declared type: magic bytes decide (SVG and anything else is rejected),
+    // and oversized images are refused before the renderer ever decodes them.
+    const kind = sniffImage(res.body);
+    const dims = kind ? imageDimensions(res.body, kind) : null;
+    if (
+      !kind ||
+      !dims ||
+      dims.width > MAX_IMAGE_DIMENSION ||
+      dims.height > MAX_IMAGE_DIMENSION ||
+      dims.width * dims.height > MAX_IMAGE_PIXELS
+    )
+      return new Response(null, { status: 502 });
+    const type = `image/${kind}`;
     remoteCache.set(check.url, { body: res.body, type });
     while (remoteCache.size > 150) {
       const k = remoteCache.keys().next().value;
@@ -400,6 +434,26 @@ async function start(): Promise<void> {
           return features.radar.dueNotifications();
         } catch (e) {
           log.warn('radar.notifyFailed', { error: e });
+          return [];
+        }
+      },
+      notify: (n) => new Notification({ title: n.title, body: n.body, silent: false }).show(),
+      isSupported: () => Notification.isSupported(),
+      setInterval: (fn, ms) => setInterval(fn, ms),
+      clearInterval: (h) => clearInterval(h as NodeJS.Timeout),
+    });
+    // Leaving Soon (opt-in): same cadence and rules as Release Radar — only while the app is open,
+    // at most once per entry and end date (availability_notifications).
+    startReleaseNotifier({
+      due: () => {
+        try {
+          return features.availability.takeDueNotifications().map((e) => ({
+            itemId: e.itemId,
+            title: `Leaving soon: ${e.itemTitle}`,
+            body: `${e.serviceName ?? 'Access'} ends ${e.daysLeft === 0 ? 'today' : `in ${e.daysLeft} day(s)`} (${e.availableUntil}).`,
+          }));
+        } catch (e) {
+          log.warn('availability.notifyFailed', { error: e });
           return [];
         }
       },

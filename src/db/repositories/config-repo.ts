@@ -35,6 +35,29 @@ export const DEFAULT_SETTINGS: AppSettings = {
   quickCapture: { globalShortcut: false, accelerator: 'CommandOrControl+Shift+Space' },
   stats: { showStreaks: false },
   importUndoRetentionDays: 30,
+  anime: {
+    titleLanguage: 'romaji',
+    showAdult: false,
+    blurAdultArt: true,
+    audioPref: 'both',
+    providerOrder: ['kitsu', 'mal', 'tmdb', 'anilist', 'jikan'],
+  },
+  artwork: {
+    priority: {
+      movie: ['tmdb', 'fanart'],
+      tv: ['tmdb', 'tvmaze', 'fanart'],
+      anime: ['kitsu', 'anilist', 'mal', 'tmdb', 'fanart'],
+      game: ['steamgriddb', 'igdb'],
+      book: ['openlibrary'],
+    },
+    autoSlots: ['cover'],
+  },
+  spoilers: { shieldByDefault: false, shieldNotes: false },
+  value: { currency: 'USD' },
+  sessions: { maxSessionHours: 12 },
+  availability: { leavingSoonDays: 14, notifications: false },
+  recommendations: { enabled: true },
+  sync: { enabled: false, folder: null, deviceName: 'This computer' },
 };
 
 export function readSettings(

@@ -1,4 +1,5 @@
 /** Type-specific progress controls. Every action records a history entry in main. */
+import { useSpoilerShield } from './Pack2Panels';
 import { useId, useState, type FormEvent } from 'react';
 import { GAME_SCHEMES, type GameScheme } from '../../../shared/enums';
 import type { ProgressEntryInput } from '../../../shared/schemas';
@@ -41,6 +42,7 @@ export function ProgressPanel(p: PanelProps) {
     case 'movie':
       return <MoviePanel {...p} />;
     case 'tv':
+    case 'anime':
       return <TvPanel {...p} />;
     case 'game':
       return <GamePanel {...p} />;
@@ -122,6 +124,19 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
     episode: SeasonView['episodes'][number] | null;
   } | null>(null);
   const totals = tvTotals(item.seasons);
+  // Spoiler Shield: episodes after the next unwatched one hide their titles.
+  const shield = useSpoilerShield();
+  const ordered = item.seasons
+    .filter((x) => x.number > 0)
+    .sort((a, b) => a.number - b.number)
+    .flatMap((x) =>
+      [...x.episodes]
+        .sort((a, b) => a.number - b.number)
+        .map((ep) => ({ s: x.number, n: ep.number, w: ep.watched })),
+    );
+  const absIndex = (sn: number, en: number) => ordered.findIndex((o) => o.s === sn && o.n === en) + 1;
+  const firstUnwatched = ordered.findIndex((o) => !o.w);
+  const nextAbs = firstUnwatched === -1 ? Number.POSITIVE_INFINITY : firstUnwatched + 1;
   // Optimistic checkmarks: a ticked box shows immediately and reverts if the save fails.
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const toggle = async (ids: string[], watched: boolean, scope: 'episode' | 'season' | 'upTo') => {
@@ -234,7 +249,15 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
                         />
                         <label htmlFor={`ep-${e.id}`}>
                           <span className="episode-code">{code}</span>{' '}
-                          {e.title ?? <span className="muted">Untitled</span>}
+                          {shield.active &&
+                          !shield.revealed &&
+                          s.number > 0 &&
+                          !e.watched &&
+                          absIndex(s.number, e.number) > nextAbs ? (
+                            <span className="muted">Title hidden (Spoiler Shield)</span>
+                          ) : (
+                            (e.title ?? <span className="muted">Untitled</span>)
+                          )}
                           {e.airDate && <span className="muted"> · {e.airDate}</span>}
                         </label>
                         {!readOnly && (

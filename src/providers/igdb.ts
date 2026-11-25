@@ -227,3 +227,55 @@ export const igdbProvider: MetadataProvider = {
 export function igdbPlatforms(g: { platforms: { name: string | null }[] }): string[] {
   return g.platforms.map((p) => p.name ?? '').filter(Boolean);
 }
+
+/* ---------------------------------------------------------------- Pile Time: time to beat */
+
+const TimeToBeatSchema = looseArray(
+  z.object({
+    game_id: looseNumber,
+    hastily: looseNumber,
+    normally: looseNumber,
+    completely: looseNumber,
+    count: looseNumber,
+  }),
+);
+
+/**
+ * IGDB `game_time_to_beats` (seconds). Returns the "normally" figure (falling
+ * back to hastily/completely) in minutes, or null when IGDB has no data.
+ */
+export async function igdbTimeToBeat(
+  igdbId: string,
+  ctx: ProviderContext,
+): Promise<ProviderResult<{ minutes: number; detail: string } | null>> {
+  if (!/^\d{1,12}$/.test(igdbId)) return { kind: 'notFound' };
+  if (!igdbProvider.isConfigured(ctx.keys)) return { kind: 'notConfigured' };
+  const t = await getToken(ctx);
+  if (t.kind !== 'ok') return t;
+  const r = await requestJson(
+    ctx.http,
+    ctx.limiter,
+    {
+      url: `${API}/game_time_to_beats`,
+      method: 'POST',
+      headers: {
+        'Client-ID': ctx.keys.clientId ?? '',
+        Authorization: `Bearer ${t.value}`,
+        'Content-Type': 'text/plain',
+      },
+      body: `fields game_id,hastily,normally,completely,count; where game_id = ${igdbId};`,
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
+    },
+    TimeToBeatSchema,
+  );
+  if (r.kind !== 'ok') return r;
+  const row = r.value[0];
+  const secs = row?.normally ?? row?.hastily ?? row?.completely ?? null;
+  if (!row || secs === null || secs <= 0) return { kind: 'ok', value: null };
+  const which = row.normally ? 'normally' : row.hastily ? 'hastily' : 'completely';
+  const minutes = Math.min(600_000, Math.max(1, Math.round(secs / 60)));
+  return {
+    kind: 'ok',
+    value: { minutes, detail: `IGDB ${which}${row.count ? ` (${Math.round(row.count)} submissions)` : ''}` },
+  };
+}

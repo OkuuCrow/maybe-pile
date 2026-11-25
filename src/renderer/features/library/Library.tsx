@@ -802,6 +802,26 @@ function BulkBar({
           <button
             type="button"
             className="button button-small"
+            disabled={busy || ids.length > 500}
+            title={ids.length > 500 ? 'Select up to 500 items' : undefined}
+            onClick={() => {
+              setBusy(true);
+              void call(getApi().artwork.bulkAutoPick({ itemIds: ids, slots: null }))
+                .then((r) => {
+                  toast.success(
+                    `Artwork: ${r.updated} updated, ${r.keptUserChoice} kept your choice, ${r.noCandidates} had nothing new${r.failed ? `, ${r.failed} failed` : ''}.`,
+                  );
+                  onDone();
+                })
+                .catch((e: unknown) => toast.error(errorOf(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? 'Working…' : 'Auto-pick artwork'}
+          </button>
+          <button
+            type="button"
+            className="button button-small"
             disabled={busy}
             onClick={() => setListOpen(true)}
           >

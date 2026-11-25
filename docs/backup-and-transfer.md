@@ -92,3 +92,29 @@ The format is OS-independent: paths inside the archive are relative with `/` sep
 ## Default export folder
 
 Exports and backups open in your Documents folder by default. Change it in Settings → Backup & Restore → Default folder. The folder is chosen in a native dialog and stored by the main process; the UI only shows its name. The native save dialog asks before replacing an existing file. Writes go to a temporary file in the same folder, are `fsync`ed, and are renamed into place. A pre-check refuses to start if the disk is nearly full.
+
+
+## Expansion Pack 2 (JSON `formatVersion` 3)
+
+The JSON export adds an optional `pack2` section with these parts:
+
+- Item preferences and time estimates
+- Moods and item moods
+- Finished runs
+- Relations and suggestions
+- Series
+- Purchases
+- Finished sessions
+- Services and availability
+- Recommendation feedback
+- Streaming links
+
+Anime metadata travels inside each item's `meta`.
+
+**Excluded:** API keys (never in the database), the `sync` setting (machine-specific), merge undo snapshots, and the episode checkmarks of *finished* runs (episode IDs are re-created on import). Artwork files travel only in `.mpbackup`.
+
+**Import merges and never overwrites:** existing rows win. Moods and services merge by name, and built-in moods by key. Rows for items not in the import are dropped. Version 1 and 2 files import unchanged, and newer versions are refused with a message.
+
+`.mpbackup` contains the whole database, so every new table and all selected artwork files are included automatically. Selected slot art counts as referenced and is never garbage-collected.
+
+Sync state (device ID, baselines, conflicts) isn't part of the JSON export. A `.mpbackup` restore clears it and turns sync off, so the restored library gets a fresh identity.

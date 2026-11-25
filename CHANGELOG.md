@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.0.0 — Expansion Pack 2 (2026-11-25)
+
+### New
+
+- **Anime** media type on the TV progress model: romaji/English/native titles (choose which to show), format, airing status, season, source material, episode count and length, next airing episode, studios, adult flag (hidden by default, artwork blurred), and a sub/dub preference.
+- **Anime sources:** Kitsu (default, keyless), official MyAnimeList API (your client ID), TMDB anime, and opt-in AniList and Jikan, plus **All anime sources** search, de-duplicated by cross IDs. Relations become franchise suggestions, and documented streaming links (allowlisted hosts) are shown with sub/dub languages.
+- **MyAnimeList XML import** (`.xml`/`.xml.gz`) through the import preview, undoable.
+- **Artwork Picker:** five slots (cover, banner, logo, icon, background), a parallel multi-source gallery (item source, TMDB, fanart.tv, SteamGridDB) with filters, preview and keyboard navigation. User choices are never replaced; "Revert to automatic" is available; per-type source priority; **bulk Auto-pick artwork**.
+- **Pile Time** totals, What fits?, item estimates (yours, IGDB time-to-beat, or derived), with confidence.
+- **Moods**, **Runs**, **Series & Next in series**, **Spoiler Shield**, **Pile Value**, **Sessions** (timer survives restarts), **Ownership & Leaving Soon**, **Recommendations** (offline, explained), **Share card** (local PNG), **Completion heatmap** (with table), **Duplicate merge** with exact undo, and a **Sync folder** (per-device append-only logs, preview, conflict review, snapshot and rollback).
+- **Pick for Me:** Mood, Finish within (Pile Time) and "Only the next entry of ordered series" constraints.
+- New **Pile** page; settings for anime, artwork, spoilers, currency, sessions, Leaving Soon, recommendations, moods and services.
+
+### Changed
+
+- **AniList is off by default** for every type, because its terms exclude list/tracker services. Re-enable it in Settings → Providers if you accept them. Jikan (unofficial, self-described scraper) is also off by default.
+- Image downloads now follow redirects manually (at most 3 hops, same host or declared host only), check pixel dimensions from the header before decoding, and record dimensions and a SHA-256 hash. Proxied remote images get the same magic-byte and size checks.
+- Settings → Providers shows each source's terms note and lists artwork-only sources.
+
+### Fixed
+
+- Wikidata type-matching regexes contained literal backspace characters instead of `\b` word boundaries (introduced in this development cycle, never released).
+
+### Migration notes
+
+- **Schema v4 → v6.** v6 adds the sync tables.
+- **v5:** Some tables are rebuilt to widen CHECK lists; runs are back-filled from existing passes; existing artwork becomes each item's selected cover; nine moods are seeded. A `VACUUM INTO` backup is taken first, and the migration is tested with real v4 data.
+- **JSON export `formatVersion` 2 → 3** (optional `pack2` section). Older files still import; newer ones are refused with a message. API keys and the reserved `sync` setting are never exported.
+- **Not included:** per-field source choice *at import time* (per-field choice exists at refresh), and a preview step before bulk artwork auto-pick. Sync covers personal fields and item existence only (see `docs/sync.md`).
+
 ## 1.2.0 — Feature pack (2026-11-23)
 
 ### New

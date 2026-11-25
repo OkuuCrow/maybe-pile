@@ -3,6 +3,7 @@
  * has a text summary, a data table, CSV export and PNG export. Missing data is
  * stated plainly instead of guessed.
  */
+import { HeatmapCard, ShareCardButton } from './Heatmap';
 import { useState } from 'react';
 import { MEDIA_TYPES, TYPE_LABELS_PLURAL } from '../../../shared/enums';
 import type { StatsView, YearInReviewView } from '../../../shared/types';
@@ -73,10 +74,18 @@ export function StatsPage() {
       </p>
       {q.loading && !q.data && <Loading />}
       {q.error && <ErrorBox error={q.error} onRetry={q.reload} />}
-      {tab === 'stats' && q.data && <StatsCharts s={q.data} />}
+      {tab === 'stats' && q.data && (
+        <>
+          <HeatmapCard year={reviewYear} />
+          <StatsCharts s={q.data} />
+        </>
+      )}
       {tab === 'review' && (
         <>
           <h2 className="visually-hidden">Year in Review {reviewYear}</h2>
+          <div className="row wrap">
+            <ShareCardButton year={reviewYear} stats={q.data} />
+          </div>
           <YearInReview year={reviewYear} />
         </>
       )}

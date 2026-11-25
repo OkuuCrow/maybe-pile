@@ -111,9 +111,20 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
   const id = useId();
   const providers = useAsync(() => call(getApi().providers.list()), []);
   const [type, setType] = useState<MediaType>('movie');
-  const usable = (providers.data ?? []).filter((p) => p.supports.includes(type) && p.enabled);
+  const usable = (providers.data ?? []).filter(
+    (p) => p.kind === 'metadata' && p.supports.includes(type) && p.enabled,
+  );
   const [providerId, setProviderId] = useState<string>('');
-  const chosen = usable.find((p) => p.id === providerId) ?? usable.find((p) => p.configured) ?? usable[0];
+  /** Anime can search every enabled source at once ("All sources"), merged by cross ids. */
+  const ALL = '__all__';
+  const allMode =
+    type === 'anime' &&
+    (providerId === ALL || (providerId === '' && usable.filter((p) => p.configured).length > 1));
+  const chosen = allMode
+    ? undefined
+    : (usable.find((p) => p.id === providerId) ?? usable.find((p) => p.configured) ?? usable[0]);
+  const [alsoOn, setAlsoOn] = useState<Record<string, string[]>>({});
+  const [failures, setFailures] = useState<{ providerId: string; message: string }[]>([]);
   const [query, setQuery] = useState('');
   const [year, setYear] = useState('');
   const [hits, setHits] = useState<SearchHitView[] | null>(null);
@@ -128,15 +139,25 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
 
   const search = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (!chosen || !query.trim()) return;
+    if ((!chosen && !allMode) || !query.trim()) return;
     setSearching(true);
     setError(null);
     setHits(null);
+    setFailures([]);
     try {
       const y = /^\d{4}$/.test(year) ? Number(year) : null;
-      setHits(
-        await call(getApi().providers.search({ providerId: chosen.id, type, query: query.trim(), year: y })),
-      );
+      if (allMode) {
+        const r = await call(getApi().anime.searchAll({ query: query.trim(), year: y }));
+        setAlsoOn(Object.fromEntries(r.hits.map((h) => [`${h.providerId}-${h.ref.id}`, h.alsoOn])));
+        setFailures(r.failures);
+        setHits(r.hits);
+      } else if (chosen) {
+        setHits(
+          await call(
+            getApi().providers.search({ providerId: chosen.id, type, query: query.trim(), year: y }),
+          ),
+        );
+      }
     } catch (err) {
       setError(errorOf(err));
     } finally {
@@ -339,12 +360,15 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
           <div className="form-grid">
             <SelectField
               label="Source"
-              value={chosen?.id ?? ''}
+              value={allMode ? ALL : (chosen?.id ?? '')}
               onChange={setProviderId}
-              options={usable.map((p) => ({
-                value: p.id,
-                label: `${p.displayName}${p.configured ? '' : ' (needs API key)'}`,
-              }))}
+              options={[
+                ...(type === 'anime' ? [{ value: ALL, label: 'All anime sources' }] : []),
+                ...usable.map((p) => ({
+                  value: p.id,
+                  label: `${p.displayName}${p.configured ? '' : ' (needs API key)'}`,
+                })),
+              ]}
             />
             <div className="field">
               <label htmlFor={`${id}-q`}>Title</label>
@@ -408,8 +432,14 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
         {hits && hits.length > 0 && (
           <>
             <p className="muted">
-              {hits.length} result(s) from {chosen?.displayName}. Select one to preview it before importing.
+              {hits.length} result(s) from {chosen?.displayName ?? 'all anime sources'}. Select one to preview
+              it before importing.
             </p>
+            {failures.length > 0 && (
+              <p className="warning-text">
+                Some sources didn’t answer: {failures.map((f) => `${f.providerId} (${f.message})`).join('; ')}
+              </p>
+            )}
             <ul className="search-results">
               {hits.map((h) => (
                 <li key={`${h.providerId}-${h.ref.id}`}>
@@ -427,7 +457,11 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
                       </span>
                       <span className="muted">
                         {typeLabel(h.type)}
-                        {h.creators.length > 0 ? ` · ${h.creators.join(', ')}` : ''} · {chosen?.displayName}
+                        {h.creators.length > 0 ? ` · ${h.creators.join(', ')}` : ''} ·{' '}
+                        {chosen?.displayName ??
+                          (providers.data ?? []).find((p) => p.id === h.providerId)?.displayName}
+                        {(alsoOn[`${h.providerId}-${h.ref.id}`]?.length ?? 0) > 0 &&
+                          ` · also on ${(alsoOn[`${h.providerId}-${h.ref.id}`] ?? []).join(', ')}`}
                       </span>
                       {h.synopsis && <span className="synopsis">{h.synopsis}</span>}
                     </span>
@@ -436,6 +470,14 @@ function SearchTab({ onDone, onManual }: { onDone: () => void; onManual: () => v
               ))}
             </ul>
             {chosen && <p className="attribution">{chosen.attribution.text}</p>}
+            {allMode && (
+              <p className="attribution">
+                {[...new Set(hits.map((h) => h.providerId))]
+                  .map((pid) => (providers.data ?? []).find((p) => p.id === pid)?.attribution.text)
+                  .filter(Boolean)
+                  .join(' ')}
+              </p>
+            )}
           </>
         )}
       </div>

@@ -29,6 +29,22 @@ import { LinksPanel } from './LinksPanel';
 import { SeriesPanel } from './SeriesPanel';
 import { AddToListDialog } from '../lists/ListsPage';
 import { SnoozeDialog } from '../health/HealthPage';
+import {
+  ArtworkPickerDialog,
+  ArtworkSlotsPanel,
+  AvailabilityPanel,
+  MoodsPanel,
+  PileTimePanel,
+  PrefsPanel,
+  RelationsPanel,
+  RunsPanel,
+  SessionsPanel,
+  SpoilerShieldContext,
+  SpoilerText,
+  StreamingPanel,
+  ValuePanel,
+} from './Pack2Panels';
+import type { ItemPrefsView } from '../../../shared/types';
 
 export function ItemPage({ id }: { id: string }) {
   const app = useApp();
@@ -48,6 +64,11 @@ export function ItemPage({ id }: { id: string }) {
   const [listOpen, setListOpen] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [revealed, setRevealed] = useState(false);
+  const prefsQ = useAsync(() => call(getApi().itemExtras.prefs({ itemId: id })), [id, app.dataVersion]);
+  const [prefsOverride, setPrefsOverride] = useState<ItemPrefsView | null>(null);
+  const prefs = prefsOverride ?? prefsQ.data;
   const readOnly = app.info?.readOnly ?? false;
 
   if (q.loading && !q.data) return <Loading />;
@@ -198,6 +219,9 @@ export function ItemPage({ id }: { id: string }) {
           <Cover url={item.artwork?.fullUrl ?? null} title={item.meta.title} type={item.type} size="large" />
           {!readOnly && (
             <div className="row wrap">
+              <button type="button" className="button button-small" onClick={() => setPickerOpen(true)}>
+                Artwork…
+              </button>
               <button
                 type="button"
                 className="button button-small"
@@ -208,7 +232,7 @@ export function ItemPage({ id }: { id: string }) {
                   )
                 }
               >
-                {item.artwork ? 'Change image…' : 'Add image…'}
+                {item.artwork ? 'Use my own image…' : 'Add my own image…'}
               </button>
               {item.artwork && (
                 <button
@@ -320,7 +344,7 @@ export function ItemPage({ id }: { id: string }) {
               ))}
             </ul>
           )}
-          {item.pass > 1 && <p className="muted">Pass {item.pass} (re-watch / re-read / replay)</p>}
+          {item.pass > 1 && <p className="muted">Run {item.pass} (re-watch / re-read / replay)</p>}
           <dl className="dates">
             <div>
               <dt>Added</dt>
@@ -440,67 +464,138 @@ export function ItemPage({ id }: { id: string }) {
         </div>
       )}
 
-      <div className="item-columns">
-        <div className="item-main">
-          <section className="card" aria-labelledby="sec-progress">
-            <h2 id="sec-progress">{S.item.progress}</h2>
-            <ProgressPanel item={item} readOnly={readOnly} onOutcome={applyOutcome} />
-          </section>
-          <section className="card" aria-labelledby="sec-history">
-            <h2 id="sec-history">{S.item.history}</h2>
-            <HistoryPanel item={item} readOnly={readOnly} tick={historyTick} onOutcome={applyOutcome} />
-          </section>
-          <section className="card" aria-labelledby="sec-notes">
-            <h2 id="sec-notes">{S.item.notes}</h2>
-            {item.personal.notes ? (
-              <p className="notes">{item.personal.notes}</p>
-            ) : (
-              <p className="muted">No notes yet.</p>
-            )}
-            {item.personal.tags.length > 0 && (
-              <ul className="chip-list" aria-label="Tags">
-                {item.personal.tags.map((t) => (
-                  <li key={t} className="chip">
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {item.customFields.some((c) => c.value !== null) && (
-              <dl className="details-list">
-                {item.customFields
-                  .filter((c) => c.value !== null)
-                  .map((c) => (
-                    <div key={c.defId}>
-                      <dt>{c.name}</dt>
-                      <dd>{typeof c.value === 'boolean' ? (c.value ? 'Yes' : 'No') : String(c.value)}</dd>
-                    </div>
-                  ))}
-              </dl>
-            )}
-          </section>
-        </div>
-        <div className="item-side">
-          <section className="card" aria-labelledby="sec-details">
-            <h2 id="sec-details">{S.item.details}</h2>
-            <DetailsList item={item} />
-          </section>
-          <section className="card" aria-labelledby="sec-links">
-            <h2 id="sec-links">{S.item.links}</h2>
-            <LinksPanel item={item} />
-          </section>
-          {item.type === 'book' && (
-            <section className="card" aria-labelledby="sec-series">
-              <h2 id="sec-series">Series</h2>
-              <SeriesPanel item={item} readOnly={readOnly} onChange={() => (q.reload(), app.bumpData())} />
+      <SpoilerShieldContext.Provider
+        value={{ active: prefs?.shieldActive ?? false, revealed, reveal: () => setRevealed(true) }}
+      >
+        {prefs?.shieldActive && !revealed && (
+          <div className="notice notice-info" role="status">
+            <p className="notice-content">
+              <span aria-hidden="true">🛡 </span>Spoiler Shield is on: titles of episodes after your next one
+              are hidden.
+            </p>
+            <button type="button" className="button button-small" onClick={() => setRevealed(true)}>
+              Reveal everything on this page
+            </button>
+          </div>
+        )}
+        <div className="item-columns">
+          <div className="item-main">
+            <section className="card" aria-labelledby="sec-progress">
+              <h2 id="sec-progress">{S.item.progress}</h2>
+              <ProgressPanel item={item} readOnly={readOnly} onOutcome={applyOutcome} />
             </section>
-          )}
-          <section className="card" aria-labelledby="sec-source">
-            <h2 id="sec-source">{S.item.source}</h2>
-            <SourcePanel item={item} />
-          </section>
+            <section className="card" aria-labelledby="sec-history">
+              <h2 id="sec-history">{S.item.history}</h2>
+              <HistoryPanel item={item} readOnly={readOnly} tick={historyTick} onOutcome={applyOutcome} />
+            </section>
+            <section className="card" aria-labelledby="sec-notes">
+              <h2 id="sec-notes">{S.item.notes}</h2>
+              {item.personal.notes ? (
+                <p className="notes">
+                  {prefs?.notesSpoiler && !revealed ? (
+                    <SpoilerTextAlways text={item.personal.notes} />
+                  ) : (
+                    item.personal.notes
+                  )}
+                </p>
+              ) : (
+                <p className="muted">No notes yet.</p>
+              )}
+              {item.personal.tags.length > 0 && (
+                <ul className="chip-list" aria-label="Tags">
+                  {item.personal.tags.map((t) => (
+                    <li key={t} className="chip">
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {item.customFields.some((c) => c.value !== null) && (
+                <dl className="details-list">
+                  {item.customFields
+                    .filter((c) => c.value !== null)
+                    .map((c) => (
+                      <div key={c.defId}>
+                        <dt>{c.name}</dt>
+                        <dd>{typeof c.value === 'boolean' ? (c.value ? 'Yes' : 'No') : String(c.value)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              )}
+            </section>
+            <section className="card" aria-labelledby="sec-time">
+              <h2 id="sec-time">Time</h2>
+              <PileTimePanel item={item} readOnly={readOnly} />
+              <h3>Sessions</h3>
+              <SessionsPanel item={item} readOnly={readOnly} />
+            </section>
+            <section className="card" aria-labelledby="sec-runs">
+              <h2 id="sec-runs">Runs</h2>
+              <RunsPanel item={item} />
+            </section>
+            <section className="card" aria-labelledby="sec-series2">
+              <h2 id="sec-series2">Series &amp; related</h2>
+              <RelationsPanel item={item} readOnly={readOnly} />
+            </section>
+          </div>
+          <div className="item-side">
+            <section className="card" aria-labelledby="sec-moods">
+              <h2 id="sec-moods">Moods</h2>
+              <MoodsPanel item={item} readOnly={readOnly} />
+            </section>
+            <section className="card" aria-labelledby="sec-details">
+              <h2 id="sec-details">{S.item.details}</h2>
+              <DetailsList item={item} />
+            </section>
+            <section className="card" aria-labelledby="sec-links">
+              <h2 id="sec-links">{S.item.links}</h2>
+              <LinksPanel item={item} />
+            </section>
+            {item.type === 'book' && (
+              <section className="card" aria-labelledby="sec-series">
+                <h2 id="sec-series">Series</h2>
+                <SeriesPanel item={item} readOnly={readOnly} onChange={() => (q.reload(), app.bumpData())} />
+              </section>
+            )}
+            {item.type === 'anime' && (
+              <section className="card" aria-labelledby="sec-streaming">
+                <h2 id="sec-streaming">Where to watch (from data sources)</h2>
+                <StreamingPanel item={item} />
+              </section>
+            )}
+            <section className="card" aria-labelledby="sec-own">
+              <h2 id="sec-own">Ownership &amp; access</h2>
+              <AvailabilityPanel item={item} readOnly={readOnly} />
+              <h3>Purchases</h3>
+              <ValuePanel item={item} readOnly={readOnly} />
+            </section>
+            <section className="card" aria-labelledby="sec-art">
+              <h2 id="sec-art">Artwork</h2>
+              <ArtworkSlotsPanel
+                item={item}
+                readOnly={readOnly}
+                onChanged={() => (q.reload(), app.bumpData())}
+              />
+            </section>
+            <section className="card" aria-labelledby="sec-prefs">
+              <h2 id="sec-prefs">Preferences</h2>
+              <PrefsPanel item={item} readOnly={readOnly} prefs={prefs} onChange={setPrefsOverride} />
+            </section>
+            <section className="card" aria-labelledby="sec-source">
+              <h2 id="sec-source">{S.item.source}</h2>
+              <SourcePanel item={item} />
+            </section>
+          </div>
         </div>
-      </div>
+      </SpoilerShieldContext.Provider>
+      {pickerOpen && (
+        <ArtworkPickerDialog
+          item={item}
+          initialSlot="cover"
+          onClose={() => setPickerOpen(false)}
+          onChosen={() => (q.reload(), app.bumpData())}
+        />
+      )}
 
       {confirmDelete && (
         <ConfirmDialog
@@ -515,7 +610,8 @@ export function ItemPage({ id }: { id: string }) {
               </p>
               <ul>
                 <li>
-                  its progress history{item.type === 'tv' ? ' and episode checkmarks' : ''}
+                  its progress history
+                  {item.type === 'tv' || item.type === 'anime' ? ' and episode checkmarks' : ''}
                   {item.type === 'movie' ? ' and viewing history' : ''}
                 </li>
                 <li>your notes, rating, tags and custom fields</li>
@@ -574,7 +670,11 @@ function StatusChangeDialog({
   const [clearDate, setClearDate] = useState(false);
   const [fill, setFill] = useState(false);
   const verb =
-    item.type === 'movie' || item.type === 'tv' ? 're-watch' : item.type === 'book' ? 're-read' : 'replay';
+    item.type === 'movie' || item.type === 'tv' || item.type === 'anime'
+      ? 're-watch'
+      : item.type === 'book'
+        ? 're-read'
+        : 'replay';
   return (
     <Dialog
       title={`Change status to ${statusLabel(to)}`}
@@ -605,9 +705,9 @@ function StatusChangeDialog({
         <>
           <p>This item is Completed. Moving it back to In Progress keeps all history.</p>
           <Checkbox
-            label={`Start a new ${verb} (pass ${item.pass + 1})`}
+            label={`Start a new ${verb} (run ${item.pass + 1})`}
             hint={
-              item.type === 'tv'
+              item.type === 'tv' || item.type === 'anime'
                 ? 'Episode checkmarks start fresh for the new pass; earlier history is kept.'
                 : 'Progress for the new pass starts fresh; earlier history is kept.'
             }
@@ -626,7 +726,7 @@ function StatusChangeDialog({
           label={
             item.type === 'movie'
               ? 'Also log a viewing for today'
-              : item.type === 'tv'
+              : item.type === 'tv' || item.type === 'anime'
                 ? 'Also mark all remaining episodes watched'
                 : item.type === 'book'
                   ? 'Also record the book as fully read'
@@ -721,3 +821,19 @@ function SourcePanel({ item }: { item: ItemDetail }) {
     </>
   );
 }
+
+/** Notes marked as spoilers: always hidden behind a Reveal button until revealed. */
+function SpoilerTextAlways({ text }: { text: string }) {
+  const [shown, setShown] = useState(false);
+  if (shown) return <>{text}</>;
+  return (
+    <span className="spoiler-hidden">
+      <span className="muted">These notes contain spoilers.</span>{' '}
+      <button type="button" className="button button-small" onClick={() => setShown(true)}>
+        Reveal notes
+      </button>
+    </span>
+  );
+}
+
+void SpoilerText;

@@ -149,3 +149,50 @@ JSON export `formatVersion` 1 → **2** (new optional sections; v1 still imports
 ### Charts as images
 
 "Save as image" captures the chart's rectangle from the window in the main process (`webContents.capturePage`) and writes a PNG through a save dialog. The renderer never handles file paths. If the page is zoomed, the captured rectangle can be slightly off; scroll the chart into view and retry.
+
+
+## Expansion Pack 2 (2.0)
+
+Decisions the brief left open, recorded as required.
+
+### Sources and terms
+
+- **Kitsu is the default anime source.** The maintainer first chose Jikan as the default. Jikan's own documentation then turned out to describe it as *scraping MyAnimeList*, and its terms page returns 404. Maybe Pile's rule is "no scraping", so Jikan is **off by default and flagged** (users may still turn it on), and Kitsu (official, keyless, documented) is the default. This deviates from the earlier instruction; we explain why in the final report.
+- **AniList is off by default for all types**, including the TV/movie/book uses it had in 1.x. Its terms exclude "anime and manga list or tracker services", which plausibly covers a personal backlog tracker. Users who previously relied on AniList must re-enable it in Settings → Providers. The terms note there explains why.
+- **No embedded fanart.tv project key.** Users supply a personal key and/or project key. Keys go in headers, never in URLs.
+- **SteamGridDB image hosts** are allowlisted to `cdn2.steamgriddb.com` and `cdn.steamgriddb.com`. No published host list was found. Unknown hosts are dropped rather than trusted.
+- **Remote-only** for every source whose terms don't clearly allow caching: Kitsu, MAL, Jikan, AniList, fanart.tv, SteamGridDB and TMDB.
+- **Streaming links** are shown only from provider data and only for allowlisted official hosts.
+- **TMDB anime IDs** are stored prefixed (`tv:123` / `movie:123`), because TMDB IDs are only unique within each kind.
+- **fanart.tv TV art is not offered:** it needs TheTVDB IDs, which we don't store.
+
+### Anime
+
+- **Anime season from a start date:** quarters, but a premiere on or after the 25th of the quarter's last month belongs to the next season.
+- **Default title language: romaji** (the usual community convention). It's applied when importing; switching the setting later affects new imports only.
+- **Adult content:** hidden from search, preview and import unless "Show adult titles" is on. Adult artwork is blurred by default even when shown.
+- **MAL score → rating:** 1–10 maps 1:1 onto half-stars. MAL "times watched" becomes extra runs.
+
+### Artwork
+
+- **Candidates are ephemeral** (30 minutes, in memory); only chosen images persist.
+- **The first five slots are fixed:** cover, banner, logo, icon, background. SteamGridDB heroes double as backgrounds.
+- **Ranking:** per-type source priority, then English or text-free images, then the source's score.
+- **Image fetch redirects:** at most 3 hops, each to the same host or a declared host. Electron's `net.fetch` rejects manual redirects, so main uses `net.request` for image fetches (verified in the e2e suite).
+- **Pixel caps:** 12,000 px per side and 40 MP, checked from the header before decoding. Banners and backgrounds are stored up to 2560 px wide; other images up to 1200 px.
+
+### Features 1–12
+
+- **Pile Time:** assumed pace 1.5 min/page; assumed episode length 45 min (TV) or 24 min (anime). The source and confidence are always shown, and unknown items are counted, not treated as zero.
+- **Runs** are the existing `pass` made explicit. Episode states of a finishing run are snapshotted before they reset.
+- **Sessions:** one running timer at a time. Sessions longer than 12 h are flagged for review. Hours default to *What I enter*, and sessions never overwrite them unless the item's hours source is *Sessions*.
+- **Pile Value:** per-currency totals with no conversion. Cost per hour uses the latest recorded hours.
+- **Leaving Soon:** a 14-day default window, notifications opt-in, once per entry and date, only while the app runs.
+- **Recommendations:** need at least one taste signal from a 4★+ completion. "Not now" lasts 30 days.
+- **Merge undo** is refused if the kept item changed after the merge.
+- **Share card:** text only, with no provider art (avoids image rights).
+- **Sync (13):** a folder of per-device append-only logs. It covers item existence and personal fields (not metadata). Natural keys; a three-way field merge against a baseline; conflicts are always reviewed by the user; snapshot plus one transaction per apply. A restored backup gets a new device ID with sync off. The `sync` setting is machine-specific: it isn't exported and it can't be set by the renderer. See `sync.md`.
+
+### Format versions
+
+JSON export `formatVersion` 2 → **3** (optional `pack2` section; older files still import). Schema version 4 → **6** (v5 Expansion Pack 2, v6 sync). The `.mpbackup` container stays at 1.

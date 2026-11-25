@@ -53,3 +53,16 @@ Alternatively, if you have a `.mpbackup`, install the previous version and resto
 | 4 | `feature_pack` (app 1.2) | Creates `up_next` and **copies the existing queue in order** (positions renumbered 0..n-1), then drops `items.up_next_position` and its index. Adds `item_snoozes`, `pick_history`, `lists`, `list_items`, `library_sources`, `library_source_entries`, `import_batches`, `import_batch_items`, `goals`, `csv_mapping_profiles`, `release_notifications`. New settings keys need no migration: missing keys fall back to defaults. |
 
 v4 is covered by `tests/integration/feature-pack.test.ts › migration v3 → v4`: realistic v3 rows → latest, queue order preserved, column dropped, every new table present, `foreign_key_check` and `integrity_check` clean, failure injection at v4 leaves v3 untouched, and opening an older library through `DatabaseManager` records the pre-migration snapshot.
+
+
+## v5 — `expansion_two` (2.0)
+
+- Runs with **foreign keys off** (the new `foreignKeysOff` flag). It rebuilds `items`, `item_creators`, `external_ids`, `goals` and `import_batches` to widen their CHECK lists, then runs `PRAGMA foreign_key_check` before committing, and turns foreign keys back on in a `finally`.
+- Back-fills `item_runs` from `items.pass` (a recursive CTE) and finished-run episode states from the progress history. Marks existing artwork as each item's selected cover (`user_selected` for local images), and seeds 9 moods.
+- The pre-migration `VACUUM INTO` backup is taken as for every migration.
+- Tested by `tests/integration/pack2.test.ts → migration v4 → v5`: real data at v4, upgrade, runs/artwork back-fill, new kinds accepted, old CHECKs still enforced, `rid` preserved for FTS, no FK violations, integrity OK.
+
+
+## v6 — `sync` (2.0)
+
+New tables only: `sync_state` (device ID, last sequence number), `sync_baseline` (agreed field values per natural key, as JSON), `sync_cursors` (read position per other device) and `sync_conflicts`. No existing tables are rebuilt.

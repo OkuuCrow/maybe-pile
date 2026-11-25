@@ -6,6 +6,7 @@
  * it was. Validation errors block the import (all-or-nothing) so a library is
  * never partially imported from a damaged file.
  */
+import { importPack2 } from './pack2-portable';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -95,7 +96,7 @@ const MAX_MESSAGES = 100;
 
 function emptyCounts(): CountsView {
   return {
-    items: { movie: 0, tv: 0, game: 0, book: 0 },
+    items: { movie: 0, tv: 0, game: 0, book: 0, anime: 0 },
     episodes: 0,
     progressEntries: 0,
     viewings: 0,
@@ -283,7 +284,15 @@ export class ImportService {
         (r) => r === roleLabel || ROLE_LABELS[r as CreatorRole].toLowerCase() === roleLabel,
       ) as CreatorRole | undefined;
       const fallback: CreatorRole =
-        type === 'book' ? 'author' : type === 'game' ? 'developer' : type === 'tv' ? 'creator' : 'director';
+        type === 'book'
+          ? 'author'
+          : type === 'game'
+            ? 'developer'
+            : type === 'tv'
+              ? 'creator'
+              : type === 'anime'
+                ? 'studio'
+                : 'director';
       return { name: (m ? (m[1] ?? '') : c).trim(), role: role ?? fallback };
     });
     const ext: { kind: string; value: string }[] = [];
@@ -301,6 +310,9 @@ export class ImportService {
     add('steam', 'steam');
     add('xbox', 'xbox');
     add('playstation', 'playstation');
+    add('anilist', 'anilist_id');
+    add('mal', 'mal_id');
+    add('kitsu', 'kitsu_id');
     const num = (col: string): number | null => {
       const v = get(col);
       if (!v) return null;
@@ -319,7 +331,7 @@ export class ImportService {
       creators,
       externalIds: ext as MetadataFields['externalIds'],
       runtimeMinutes: type === 'movie' ? num('runtime_minutes') : null,
-      episodeRuntime: type === 'tv' ? num('runtime_minutes') : null,
+      episodeRuntime: type === 'tv' || type === 'anime' ? num('runtime_minutes') : null,
       network: get('network') || null,
       showStatus: (get('show_status') || null) as MetadataFields['showStatus'],
       pageCount: num('page_count'),
@@ -968,6 +980,7 @@ export class ImportService {
 
   private applyExtras(env: ExportEnvelope, idMap: Map<string, string>, now: string): void {
     this.applyFeatureData(env, idMap, now);
+    if (env.data.pack2) importPack2(this.db, env.data.pack2, idMap, now);
     const db = this.db;
     const existingThemes = listThemes(db);
     const takenNames = new Set(existingThemes.map((t) => t.name.toLowerCase()));

@@ -292,6 +292,7 @@ export function summarizeProgress(i: ProgressInputs): ProgressSummary {
     case 'movie':
       return movieSummary(i);
     case 'tv':
+    case 'anime':
       return tvSummary(i);
     case 'game':
       return gameSummary(i);

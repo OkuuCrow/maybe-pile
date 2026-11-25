@@ -71,3 +71,14 @@ Settings → Data & Behavior → **Open data folder** opens it. The diagnostic l
 | No release notifications | They're off by default (Settings → Features → Release Radar), only fire for exact dates, and only while Maybe Pile is running. On Windows/macOS, also allow notifications for Maybe Pile in system settings. |
 | Goodreads/Letterboxd import refuses the file | Choose the file exactly as exported (Goodreads CSV; Letterboxd .zip or one of its CSVs). For other spreadsheets use **Custom CSV**. Files over 25 MB or 50,000 rows must be split. |
 | "Save as image" saved a blank or cropped chart | Scroll the chart fully into view and try again. Capture uses the visible window area. |
+
+
+## Expansion Pack 2 (2.0)
+
+- **AniList results disappeared after updating:** AniList is now off by default for terms reasons. Turn it on in Settings → Providers if you accept its terms.
+- **"Some sources didn't answer" in All anime sources:** the named source was rate-limited or offline. The other results are still valid.
+- **No fanart.tv or SteamGridDB images:** add your own key in Settings → Providers. fanart.tv doesn't cover TV shows here (it needs TheTVDB IDs).
+- **An image says "shown live":** that source's terms don't allow storing images, so it appears only while you're online.
+- **A timer shows a very long session:** a timer left running is flagged; enter the right length when you stop it.
+- **Merge undo refused:** the kept item was edited after the merge. Fix the items by hand.
+- **MAL import says the file has a DOCTYPE:** re-export from MyAnimeList; modified files with entity declarations are rejected for safety.

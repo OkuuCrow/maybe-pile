@@ -2,10 +2,12 @@
  * Pick for Me: loads candidates with one indexed query, filters and picks with
  * the pure domain functions, and records picks / skips locally.
  */
+import type { PileTimeService } from './pile-time-service';
+import type { ItemExtrasService } from './item-extras-service';
 import { randomInt, randomUUID } from 'node:crypto';
 import type { MediaType, Status } from '../../shared/enums';
 import { appError } from '../../shared/result';
-import type { PickRequest } from '../../shared/schemas';
+import type { PickRequestInput } from '../../shared/schemas';
 import type { PickHistoryView, PickResultView } from '../../shared/types';
 import { addDays } from '../../domain/calendar';
 import { localDate } from '../../domain/dates';
@@ -28,6 +30,8 @@ export class PickService {
   constructor(
     private readonly ctx: ServiceContext,
     private readonly library: LibraryService,
+    private readonly pileTime?: PileTimeService,
+    private readonly extras?: ItemExtrasService,
   ) {}
 
   private get db() {
@@ -39,6 +43,23 @@ export class PickService {
 
   candidates(): PickCandidate[] {
     const today = this.today();
+    // Expansion Pack 2 signals (moods, Pile Time remaining, series order).
+    const moods = new Map<string, string[]>();
+    for (const m of this.db.all<{ item_id: string; mood_id: string }>(
+      'SELECT item_id, mood_id FROM item_moods',
+    )) {
+      const a = moods.get(m.item_id);
+      if (a) a.push(m.mood_id);
+      else moods.set(m.item_id, [m.mood_id]);
+    }
+    const remaining = new Map(
+      (this.pileTime?.backlog() ?? []).map((r) => [r.id, r.estimate.remainingMinutes]),
+    );
+    const blocked = new Set<string>();
+    for (const f of this.extras?.franchises() ?? []) {
+      if (!f.respectOrder || !f.nextItemId) continue;
+      for (const e of f.entries) if (e.mainline && e.itemId !== f.nextItemId) blocked.add(e.itemId);
+    }
     return this.db
       .all<{
         id: string;
@@ -72,6 +93,9 @@ export class PickService {
         [today, today],
       )
       .map((r) => ({
+        moodIds: moods.get(r.id) ?? [],
+        remainingMinutes: remaining.get(r.id) ?? null,
+        seriesBlocked: blocked.has(r.id),
         id: r.id,
         title: r.title,
         type: r.type,
@@ -89,7 +113,7 @@ export class PickService {
       }));
   }
 
-  roll(req: PickRequest): PickResultView {
+  roll(req: PickRequestInput): PickResultView {
     const { pick: prefs } = readSettings(this.db).settings;
     const today = this.today();
     const { eligible, emptiedBy } = filterCandidates(this.candidates(), req.constraints);

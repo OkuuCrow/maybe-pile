@@ -114,3 +114,8 @@ Rules:
 
 `schemaVersion: 2` adds the dashboard components **`pileHealth`** (Pile Health), **`upcoming`** (Upcoming releases), **`goals`**, **`lists`** and **`statsSummary`** (Stats summary, hidden by default). `pick` (Pick for Me) and `upNext` already existed. Version-1 layout files are **migrated** on import: the new components are appended with their default visibility, with no "missing component" notice. Saved layouts in the database get the new components appended the same way. Files with an unknown component id or a newer `schemaVersion` are still rejected. [`examples/focused.mplayout.json`](../examples/focused.mplayout.json) is a v2 file.
 
+
+
+## Expansion Pack 2
+
+No new *required* theme tokens. The new components (artwork grid, mood toggles, heatmap levels, timer) derive their colors from the existing tokens with `color-mix()`, so built-in and custom themes work unchanged. The layout schema is unchanged; the new item-page panels and the Pile page aren't part of the configurable dashboard/library layouts.

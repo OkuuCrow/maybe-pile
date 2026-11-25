@@ -34,7 +34,7 @@ export interface ActivityRow {
 }
 
 export type TypeCounts = Record<MediaType, number>;
-const zero = (): TypeCounts => ({ movie: 0, tv: 0, game: 0, book: 0 });
+const zero = (): TypeCounts => ({ movie: 0, tv: 0, game: 0, book: 0, anime: 0 });
 
 export interface MonthBucket {
   month: string; // YYYY-MM
@@ -246,7 +246,7 @@ export function yearInReview(completed: readonly CompletedRow[], year: number): 
     (r) => r.hours,
   );
   const show = best(
-    rows.filter((r) => r.type === 'tv'),
+    rows.filter((r) => r.type === 'tv' || r.type === 'anime'),
     (r) => r.episodes,
   );
   let busiest: { month: string; count: number } | null = null;

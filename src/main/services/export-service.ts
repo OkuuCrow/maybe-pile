@@ -3,6 +3,7 @@
  * logs, soft-deleted items and artwork binaries (JSON references artwork by
  * content hash or remote URL; full backups include the binaries).
  */
+import { exportPack2 } from './pack2-portable';
 import { ROLE_LABELS, STATUS_LABELS, TYPE_LABELS, type MediaType } from '../../shared/enums';
 import { joinList, toCsv } from '../../domain/csv';
 import { ratingToStars } from '../../domain/rating';
@@ -97,7 +98,7 @@ export function exportItem(db: Db, id: string): ExportItem | null {
 
 export function emptyCounts(): CountsView {
   return {
-    items: { movie: 0, tv: 0, game: 0, book: 0 },
+    items: { movie: 0, tv: 0, game: 0, book: 0, anime: 0 },
     episodes: 0,
     progressEntries: 0,
     viewings: 0,
@@ -117,7 +118,7 @@ export function emptyCounts(): CountsView {
 }
 
 export function libraryCounts(db: Db): CountsView {
-  const byType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
+  const byType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0, anime: 0 };
   for (const r of db.all<{ type: MediaType; n: number }>(
     'SELECT type, count(*) AS n FROM items WHERE deleted_at IS NULL GROUP BY type',
   ))
@@ -210,8 +211,17 @@ export function buildJsonExport(db: Db, appVersion: string, now: Date): ExportEn
         quickCapture: settings.quickCapture,
         stats: settings.stats,
         importUndoRetentionDays: settings.importUndoRetentionDays,
+        // Expansion Pack 2. `sync` is deliberately omitted: its folder path is machine-specific.
+        anime: settings.anime,
+        artwork: settings.artwork,
+        spoilers: settings.spoilers,
+        value: settings.value,
+        sessions: settings.sessions,
+        availability: settings.availability,
+        recommendations: settings.recommendations,
       },
       ...exportFeatureData(db),
+      pack2: exportPack2(db),
     },
   };
 }
@@ -339,7 +349,7 @@ export function exportFeatureData(
   const importBatches = db
     .all<{
       id: string;
-      kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped';
+      kind: 'steam' | 'manual-list' | 'goodreads' | 'letterboxd' | 'csv-mapped' | 'mal-xml';
       source_id: string | null;
       label: string;
       created_at: string;

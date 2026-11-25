@@ -81,7 +81,7 @@ export interface PileStats {
  * approximation.)
  */
 export function pileStats(rows: readonly HealthRow[], today: string): PileStats {
-  const sizeByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0 };
+  const sizeByType: Record<MediaType, number> = { movie: 0, tv: 0, game: 0, book: 0, anime: 0 };
   let total = 0;
   const plannedAges: number[] = [];
   for (const r of rows) {

@@ -28,7 +28,31 @@ export const FIELDS_BY_TYPE: Record<MediaType, MetadataField[]> = {
   tv: [...COMMON_FIELDS, 'network', 'showStatus', 'episodeRuntime', 'lastAirDate'],
   game: [...COMMON_FIELDS],
   book: [...COMMON_FIELDS, 'publisher', 'pageCount', 'audioMinutes', 'isbn10', 'isbn13'],
+  anime: [
+    ...COMMON_FIELDS,
+    'titleRomaji',
+    'titleEnglish',
+    'titleNative',
+    'animeFormat',
+    'airingStatus',
+    'animeSeason',
+    'seasonYear',
+    'sourceMaterial',
+    'episodeCount',
+    'episodeRuntime',
+    'lastAirDate',
+    'nextEpisode',
+    'nextAiringAt',
+    'isAdult',
+  ],
 };
+
+/**
+ * Schedule fields describe "right now" (next airing episode). Unlike other
+ * fields, a provider that no longer reports them (the show finished) may
+ * clear them on refresh.
+ */
+export const VOLATILE_FIELDS: ReadonlySet<MetadataField> = new Set(['nextEpisode', 'nextAiringAt']);
 
 export const FIELD_LABELS: Record<MetadataField, string> = {
   title: 'Title',
@@ -50,10 +74,26 @@ export const FIELD_LABELS: Record<MetadataField, string> = {
   audioMinutes: 'Audiobook length (minutes)',
   isbn10: 'ISBN-10',
   isbn13: 'ISBN-13',
+  animeFormat: 'Format',
+  airingStatus: 'Airing status',
+  animeSeason: 'Season',
+  seasonYear: 'Season year',
+  sourceMaterial: 'Source material',
+  episodeCount: 'Episode count',
+  nextEpisode: 'Next episode',
+  nextAiringAt: 'Next episode airs',
+  isAdult: 'Adult (18+)',
+  titleRomaji: 'Title (romaji)',
+  titleEnglish: 'Title (English)',
+  titleNative: 'Title (native)',
 };
 
 export function releaseDateLabel(type: MediaType): string {
-  return type === 'tv' ? 'First air date' : type === 'book' ? 'Publication date' : 'Release date';
+  return type === 'tv' || type === 'anime'
+    ? 'First air date'
+    : type === 'book'
+      ? 'Publication date'
+      : 'Release date';
 }
 
 export function emptyMeta(title = ''): MetadataFields {
@@ -77,6 +117,18 @@ export function emptyMeta(title = ''): MetadataFields {
     audioMinutes: null,
     isbn10: null,
     isbn13: null,
+    animeFormat: null,
+    airingStatus: null,
+    animeSeason: null,
+    seasonYear: null,
+    sourceMaterial: null,
+    episodeCount: null,
+    nextEpisode: null,
+    nextAiringAt: null,
+    isAdult: false,
+    titleRomaji: null,
+    titleEnglish: null,
+    titleNative: null,
   };
 }
 
@@ -133,6 +185,7 @@ export function isEmptyValue(value: unknown): boolean {
 
 export function displayValue(field: MetadataField, value: unknown): string {
   if (isEmptyValue(value)) return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
   if (field === 'creators') {
     return (value as { name: string; role: keyof typeof ROLE_LABELS }[])
       .map((c) => `${c.name} (${ROLE_LABELS[c.role]})`)
@@ -178,8 +231,9 @@ export function compareForRefresh(
       unchanged.push(field);
       continue;
     }
-    // A provider that has no value for a field never blanks out existing data.
-    if (isEmptyValue(inc)) {
+    // A provider that has no value for a field never blanks out existing data
+    // (except schedule fields, which legitimately disappear when airing ends).
+    if (isEmptyValue(inc) && !VOLATILE_FIELDS.has(field)) {
       unchanged.push(field);
       continue;
     }

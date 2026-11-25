@@ -221,7 +221,7 @@ describe('search, filter, sort', () => {
   it('dashboard counts and recents come from real data only', () => {
     const d = env.library.dashboard();
     expect(d.total).toBe(6);
-    expect(d.countsByType).toEqual({ movie: 1, tv: 1, game: 1, book: 3 });
+    expect(d.countsByType).toEqual({ movie: 1, tv: 1, game: 1, book: 3, anime: 0 });
     expect(d.countsByStatus.dropped).toBe(1);
     expect(d.continueItems.map((c) => c.title)).toEqual(['The Bear']);
     expect(d.activityByWeek).toHaveLength(12);

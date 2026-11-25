@@ -18,14 +18,31 @@ import { migration0001 } from './migrations/0001_core';
 import { migration0002 } from './migrations/0002_search_and_audit';
 import { migration0003 } from './migrations/0003_up_next_and_ids';
 import { migration0004 } from './migrations/0004_feature_pack';
+import { migration0005 } from './migrations/0005_expansion_two';
+import { migration0006 } from './migrations/0006_sync';
 
 export interface Migration {
   version: number;
   name: string;
   sql: string;
+  /**
+   * Run with foreign-key enforcement off (SQLite's documented 12-step table
+   * rebuild). Needed when a migration rebuilds a table that other tables
+   * reference with ON DELETE CASCADE: dropping the old table with FKs on
+   * would cascade-delete every child row. `PRAGMA foreign_key_check` must be
+   * clean before the transaction commits, otherwise the migration rolls back.
+   */
+  foreignKeysOff?: boolean;
 }
 
-export const MIGRATIONS: readonly Migration[] = [migration0001, migration0002, migration0003, migration0004];
+export const MIGRATIONS: readonly Migration[] = [
+  migration0001,
+  migration0002,
+  migration0003,
+  migration0004,
+  migration0005,
+  migration0006,
+];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.length;
 
 export function checksum(sql: string): string {
@@ -103,17 +120,28 @@ export function migrate(db: Db, opts: MigrateOptions = {}): MigrateResult {
 
   const done: number[] = [];
   for (const m of pending) {
-    db.transaction(() => {
-      db.exec(m.sql);
-      if (opts.failAtVersion === m.version) throw new Error(`Injected migration failure at v${m.version}`);
-      db.run('INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)', [
-        m.version,
-        m.name,
-        checksum(m.sql),
-        now(),
-      ]);
-      db.exec(`PRAGMA user_version = ${m.version}`);
-    });
+    // PRAGMA foreign_keys is a no-op inside a transaction, so it is switched outside it.
+    if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = OFF');
+    try {
+      db.transaction(() => {
+        db.exec(m.sql);
+        if (m.foreignKeysOff) {
+          const violations = db.all('PRAGMA foreign_key_check');
+          if (violations.length > 0)
+            throw new Error(`Migration v${m.version} left ${violations.length} foreign-key violation(s).`);
+        }
+        if (opts.failAtVersion === m.version) throw new Error(`Injected migration failure at v${m.version}`);
+        db.run('INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)', [
+          m.version,
+          m.name,
+          checksum(m.sql),
+          now(),
+        ]);
+        db.exec(`PRAGMA user_version = ${m.version}`);
+      });
+    } finally {
+      if (m.foreignKeysOff) db.exec('PRAGMA foreign_keys = ON');
+    }
     done.push(m.version);
   }
   return { from, to: latest, applied: done };

@@ -8,7 +8,7 @@
  * system zone). See docs/features/stats.md.
  */
 import type { MediaType } from '../../shared/enums';
-import { TYPE_LABELS } from '../../shared/enums';
+import { MEDIA_TYPES, TYPE_LABELS } from '../../shared/enums';
 import { appError } from '../../shared/result';
 import type { StatsView, YearInReviewView } from '../../shared/types';
 import { instantToLocalDate } from '../../domain/calendar';
@@ -63,7 +63,7 @@ export class StatsService {
                 (SELECT group_concat(t.name, '${SEP}') FROM item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.item_id = i.id) AS tags,
                 CASE WHEN i.type = 'game' THEN (SELECT p.value FROM progress_events p WHERE p.item_id = i.id AND p.kind = 'hours' AND p.deleted_at IS NULL
                      ORDER BY COALESCE(p.occurred_at, p.recorded_at) DESC, p.seq DESC LIMIT 1) END AS hours,
-                CASE WHEN i.type = 'tv' THEN (SELECT count(*) FROM episodes e JOIN seasons s ON s.id = e.season_id WHERE e.item_id = i.id AND e.watched = 1 AND s.season_number > 0) END AS episodes
+                CASE WHEN i.type IN ('tv', 'anime') THEN (SELECT count(*) FROM episodes e JOIN seasons s ON s.id = e.season_id WHERE e.item_id = i.id AND e.watched = 1 AND s.season_number > 0) END AS episodes
          FROM items i LEFT JOIN book_details b ON b.item_id = i.id
          WHERE i.deleted_at IS NULL AND i.status = 'completed' AND i.date_completed IS NOT NULL`,
       )
@@ -81,6 +81,42 @@ export class StatsService {
         hours: r.hours,
         episodes: r.episodes,
       }));
+  }
+
+  /**
+   * Completion heatmap for a year: one entry per day with completions, counting
+   * every finished run (rewatches/replays included) from item_runs, plus the
+   * item's own completion date when its runs haven't been materialized yet.
+   * Dates are local dates already (date_completed is a calendar date).
+   */
+  heatmap(year: number): {
+    year: number;
+    days: { date: string; count: number; titles: string[] }[];
+    total: number;
+    maxPerDay: number;
+  } {
+    const from = `${year}-01-01`;
+    const to = `${year}-12-31`;
+    const rows = this.db.all<{ d: string; title: string }>(
+      `SELECT r.date_completed AS d, i.title FROM item_runs r JOIN items i ON i.id = r.item_id
+        WHERE i.deleted_at IS NULL AND r.status = 'completed' AND r.date_completed BETWEEN ? AND ?
+       UNION ALL
+       SELECT i.date_completed AS d, i.title FROM items i
+        WHERE i.deleted_at IS NULL AND i.status = 'completed' AND i.date_completed BETWEEN ? AND ?
+          AND NOT EXISTS (SELECT 1 FROM item_runs r WHERE r.item_id = i.id AND r.run_number = i.pass)`,
+      [from, to, from, to],
+    );
+    const by = new Map<string, string[]>();
+    for (const r of rows) {
+      const d = r.d.slice(0, 10);
+      const a = by.get(d);
+      if (a) a.push(r.title);
+      else by.set(d, [r.title]);
+    }
+    const days = [...by.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, titles]) => ({ date, count: titles.length, titles: titles.slice(0, 10) }));
+    return { year, days, total: rows.length, maxPerDay: days.reduce((m, d) => Math.max(m, d.count), 0) };
   }
 
   activityRows(): ActivityRow[] {
@@ -148,7 +184,7 @@ export class StatsService {
   /** CSV for one chart's data (same numbers as the chart's data table). Formula-safe via toCsv. */
   chartCsv(chart: StatsChart, year: number | null, bom: boolean): string {
     const s = this.get(year);
-    const types: MediaType[] = ['movie', 'tv', 'game', 'book'];
+    const types: MediaType[] = [...MEDIA_TYPES];
     switch (chart) {
       case 'completedByMonth':
         return toCsv(

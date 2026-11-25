@@ -5,11 +5,15 @@
  * There is no background service or login item, so nothing fires while the
  * app is closed (documented in docs/features/release-radar.md).
  */
-import type { DueNotification } from './services/release-radar-service';
+/** Anything with a title and body can be shown (Release Radar, Leaving Soon). */
+export interface Notifiable {
+  title: string;
+  body: string;
+}
 
-export interface NotifierDeps {
-  due(): DueNotification[];
-  notify(n: DueNotification): void;
+export interface NotifierDeps<T extends Notifiable = Notifiable> {
+  due(): T[];
+  notify(n: T): void;
   isSupported(): boolean;
   setInterval(fn: () => void, ms: number): unknown;
   clearInterval(handle: unknown): void;
@@ -17,7 +21,9 @@ export interface NotifierDeps {
 
 export const CHECK_EVERY_MS = 60 * 60 * 1000;
 
-export function startReleaseNotifier(d: NotifierDeps): { check: () => number; stop: () => void } {
+export function startReleaseNotifier<T extends Notifiable>(
+  d: NotifierDeps<T>,
+): { check: () => number; stop: () => void } {
   const check = (): number => {
     if (!d.isSupported()) return 0;
     let n = 0;

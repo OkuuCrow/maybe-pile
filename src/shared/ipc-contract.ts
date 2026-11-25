@@ -49,6 +49,8 @@ import {
   requiredText,
 } from './schemas';
 import { CsvMappingSchema } from '../domain/tracker-csv';
+import * as S from './schemas';
+import type * as T from './types';
 import type { API_SHAPE, Channel, MenuCommand } from './ipc-channels';
 import type { Result } from './result';
 import type {
@@ -248,7 +250,7 @@ export const REQUEST_SCHEMAS = {
   'batches:undo': z.strictObject({ batchId: IdSchema }),
 
   'tracker:preview': z.strictObject({
-    kind: z.enum(['goodreads', 'letterboxd', 'csv']),
+    kind: z.enum(['goodreads', 'letterboxd', 'csv', 'mal']),
     profileId: IdSchema.nullable(),
   }),
   'tracker:remap': z.strictObject({
@@ -340,6 +342,88 @@ export const REQUEST_SCHEMAS = {
   'data:restoreInternalPreview': z.strictObject({
     label: z.string().regex(/^pre-[a-z]+-[0-9TZ-]+(?:-\d+)?\.mpbackup$/),
   }),
+
+  /* ---------------------------------------------------------------- Expansion Pack 2 */
+  'stats:heatmap': S.HeatmapSchema,
+  'artwork:slots': byItem,
+  'artwork:gallery': byItem,
+  'artwork:choose': S.ArtworkChooseSchema,
+  'artwork:revert': S.ArtworkSlotRequestSchema,
+  'artwork:clearSlot': S.ArtworkSlotRequestSchema,
+  'artwork:autoPick': S.ArtworkAutoPickSchema,
+  'artwork:bulkAutoPick': S.ArtworkBulkSchema,
+  'anime:searchAll': S.AnimeSearchAllSchema,
+  'pileTime:item': byItem,
+  'pileTime:totals': none,
+  'pileTime:fits': S.PileTimeFitsSchema,
+  'pileTime:setManual': S.PileTimeManualSchema,
+  'pileTime:fetchIgdb': byItem,
+  'moods:list': none,
+  'moods:create': S.MoodCreateSchema,
+  'moods:update': S.MoodUpdateSchema,
+  'moods:delete': byId,
+  'moods:reorder': S.MoodReorderSchema,
+  'moods:forItem': byItem,
+  'moods:setForItem': S.ItemMoodsSchema,
+  'moods:bulk': S.BulkMoodSchema,
+  'itemExtras:prefs': byItem,
+  'itemExtras:setPrefs': S.ItemPrefsPatchSchema,
+  'itemExtras:runs': byItem,
+  'itemExtras:updateRun': S.RunUpdateSchema,
+  'itemExtras:streaming': byItem,
+  'itemExtras:relations': byItem,
+  'itemExtras:addRelation': S.RelationAddSchema,
+  'itemExtras:removeRelation': S.RelationRemoveSchema,
+  'itemExtras:suggestions': byItem,
+  'itemExtras:resolveSuggestion': S.SuggestionResolveSchema,
+  'itemExtras:franchisesForItem': byItem,
+  'franchises:list': none,
+  'franchises:get': byId,
+  'franchises:create': S.FranchiseCreateSchema,
+  'franchises:update': S.FranchiseUpdateSchema,
+  'franchises:setEntries': S.FranchiseEntriesSchema,
+  'franchises:delete': byId,
+  'value:list': byItem,
+  'value:add': S.PurchaseAddSchema,
+  'value:update': S.PurchaseUpdateSchema,
+  'value:delete': byId,
+  'value:summary': none,
+  'sessions:open': none,
+  'sessions:forItem': byItem,
+  'sessions:start': byItem,
+  'sessions:pause': byId,
+  'sessions:resume': byId,
+  'sessions:stop': S.SessionStopSchema,
+  'sessions:log': S.SessionLogSchema,
+  'sessions:edit': S.SessionEditSchema,
+  'sessions:delete': byId,
+  'availability:services': none,
+  'availability:addService': S.ServiceAddSchema,
+  'availability:updateService': S.ServiceUpdateSchema,
+  'availability:removeService': byId,
+  'availability:forItem': byItem,
+  'availability:add': S.AvailabilityAddSchema,
+  'availability:update': S.AvailabilityUpdateSchema,
+  'availability:delete': byId,
+  'availability:leavingSoon': none,
+  'recs:list': S.RecListSchema,
+  'recs:feedback': S.RecFeedbackSchema,
+  'recs:clearFeedback': none,
+  'merge:pairs': none,
+  'merge:dismiss': S.MergePairSchema,
+  'merge:preview': S.MergePairSchema,
+  'merge:apply': S.MergeApplySchema,
+  'merge:lastUndoable': none,
+  'merge:undo': byId,
+  'share:saveCard': S.ShareCardSaveSchema,
+  'sync:status': none,
+  'sync:chooseFolder': none,
+  'sync:disable': none,
+  'sync:setDeviceName': z.strictObject({ name: requiredText(60, 'Device name') }),
+  'sync:preview': none,
+  'sync:apply': none,
+  'sync:conflicts': none,
+  'sync:resolve': z.strictObject({ id: IdSchema, choice: z.enum(['mine', 'theirs']) }),
 } as const satisfies Record<Channel, z.ZodType>;
 
 export interface ThemeDetailView {
@@ -496,6 +580,93 @@ export interface ResponseTypes {
   'data:backupCreate': FileOpResult | null;
   'data:backupList': { label: string; bytes: number; kind: 'pre-restore' | 'pre-migration' | 'other' }[];
   'data:restoreInternalPreview': ImportPreviewView;
+
+  /* ---------------------------------------------------------------- Expansion Pack 2 */
+  'stats:heatmap': T.HeatmapView;
+  'artwork:slots': T.ArtworkSlotView[];
+  'artwork:gallery': T.ArtworkGallery;
+  'artwork:choose': { slots: T.ArtworkSlotView[]; warning: string | null };
+  'artwork:revert': T.ArtworkSlotView[];
+  'artwork:clearSlot': T.ArtworkSlotView[];
+  'artwork:autoPick': { slots: T.ArtworkSlotView[]; updated: string[]; kept: string[]; empty: string[] };
+  'artwork:bulkAutoPick': T.BulkAutoPickResult;
+  'anime:searchAll': T.AnimeSearchAllView;
+  'pileTime:item': T.PileTimeEstimate & { manualMinutes: number | null; providerMinutes: number | null };
+  'pileTime:totals': T.PileTimeTotals;
+  'pileTime:fits': T.PileTimeRow[];
+  'pileTime:setManual': T.PileTimeEstimate;
+  'pileTime:fetchIgdb': T.PileTimeEstimate & { manualMinutes: number | null; providerMinutes: number | null };
+  'moods:list': T.MoodView[];
+  'moods:create': T.MoodView[];
+  'moods:update': T.MoodView[];
+  'moods:delete': T.MoodView[];
+  'moods:reorder': T.MoodView[];
+  'moods:forItem': string[];
+  'moods:setForItem': string[];
+  'moods:bulk': { changed: number };
+  'itemExtras:prefs': T.ItemPrefsView;
+  'itemExtras:setPrefs': T.ItemPrefsView;
+  'itemExtras:runs': T.RunView[];
+  'itemExtras:updateRun': T.RunView[];
+  'itemExtras:streaming': T.StreamingLinkView[];
+  'itemExtras:relations': T.RelationView[];
+  'itemExtras:addRelation': T.RelationView[];
+  'itemExtras:removeRelation': T.RelationView[];
+  'itemExtras:suggestions': T.SuggestionView[];
+  'itemExtras:resolveSuggestion': { relations: T.RelationView[]; suggestions: T.SuggestionView[] };
+  'itemExtras:franchisesForItem': T.FranchiseView[];
+  'franchises:list': T.FranchiseView[];
+  'franchises:get': T.FranchiseView;
+  'franchises:create': T.FranchiseView;
+  'franchises:update': T.FranchiseView;
+  'franchises:setEntries': T.FranchiseView;
+  'franchises:delete': null;
+  'value:list': T.PurchaseView[];
+  'value:add': T.PurchaseView[];
+  'value:update': T.PurchaseView[];
+  'value:delete': T.PurchaseView[];
+  'value:summary': T.CurrencyTotals[];
+  'sessions:open': T.SessionView[];
+  'sessions:forItem': T.SessionView[];
+  'sessions:start': T.SessionView;
+  'sessions:pause': T.SessionView;
+  'sessions:resume': T.SessionView;
+  'sessions:stop': T.SessionView;
+  'sessions:log': T.SessionView;
+  'sessions:edit': T.SessionView;
+  'sessions:delete': null;
+  'availability:services': T.ServiceView[];
+  'availability:addService': T.ServiceView[];
+  'availability:updateService': T.ServiceView[];
+  'availability:removeService': T.ServiceView[];
+  'availability:forItem': T.AvailabilityView[];
+  'availability:add': T.AvailabilityView[];
+  'availability:update': T.AvailabilityView[];
+  'availability:delete': T.AvailabilityView[];
+  'availability:leavingSoon': T.LeavingSoonView[];
+  'recs:list': T.Recommendation[];
+  'recs:feedback': null;
+  'recs:clearFeedback': { cleared: number };
+  'merge:pairs': T.DuplicatePair[];
+  'merge:dismiss': T.DuplicatePair[];
+  'merge:preview': T.MergePreview;
+  'merge:apply': { snapshotId: string };
+  'merge:lastUndoable': {
+    snapshotId: string;
+    keptTitle: string;
+    removedTitle: string;
+    createdAt: string;
+  } | null;
+  'merge:undo': null;
+  'share:saveCard': FileOpResult | null;
+  'sync:status': T.SyncStatusView;
+  'sync:chooseFolder': T.SyncStatusView | null;
+  'sync:disable': T.SyncStatusView;
+  'sync:setDeviceName': T.SyncStatusView;
+  'sync:preview': T.SyncPreviewView;
+  'sync:apply': { applied: number; created: number; conflicts: number; sent: number; snapshot: string };
+  'sync:conflicts': T.SyncConflictView[];
+  'sync:resolve': T.SyncConflictView[];
 }
 
 export type RequestOf<C extends Channel> = z.input<(typeof REQUEST_SCHEMAS)[C]>;

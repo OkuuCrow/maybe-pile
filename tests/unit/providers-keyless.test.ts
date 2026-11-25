@@ -169,6 +169,7 @@ describe('AniList provider (keyless)', () => {
       search: 'frieren',
       type: 'ANIME',
       formats: ['TV', 'TV_SHORT', 'ONA', 'OVA', 'SPECIAL'],
+      adult: false,
     });
     const d = await anilistProvider.fetchDetails(
       { providerId: 'anilist', id: '154587', type: 'tv' },

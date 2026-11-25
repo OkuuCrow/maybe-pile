@@ -27,6 +27,25 @@ export const LINK_HOSTS: Record<ExternalLinkView['kind'], readonly string[]> = {
   wikidata: ['www.wikidata.org'],
   anilist: ['anilist.co'],
   mal: ['myanimelist.net'],
+  kitsu: ['kitsu.app', 'kitsu.io'],
+  // Provider-documented streaming links (AniList externalLinks of type STREAMING). Hosts are an
+  // explicit allowlist of official services; anything else is dropped rather than guessed.
+  streaming: [
+    'www.crunchyroll.com',
+    'crunchyroll.com',
+    'www.netflix.com',
+    'www.hulu.com',
+    'www.amazon.com',
+    'www.primevideo.com',
+    'www.disneyplus.com',
+    'www.hidive.com',
+    'tv.apple.com',
+    'www.youtube.com',
+    'www.bilibili.tv',
+    'www.max.com',
+    'www.adultswim.com',
+    'www.funimation.com',
+  ],
 };
 
 /** Every host any link kind may point to (used by the generic external-link opener). */
@@ -107,10 +126,13 @@ export function externalIdError(id: ExternalId): string | null {
     case 'imdb':
       return IMDB_ID_RE.test(id.value) ? null : 'IMDb IDs look like tt1234567.';
     case 'tmdb':
+      // Anime may carry a "tv:" / "movie:" prefix (TMDB keeps the two id spaces apart).
+      return /^(?:(?:tv|movie):)?\d{1,12}$/.test(id.value) ? null : 'This ID must be a number.';
     case 'tvmaze':
     case 'igdb':
     case 'anilist':
     case 'mal':
+    case 'kitsu':
       return /^\d{1,12}$/.test(id.value) ? null : 'This ID must be a number.';
     case 'wikidata':
       return /^Q\d{1,12}$/.test(id.value) ? null : 'Wikidata IDs look like Q42.';
@@ -132,7 +154,7 @@ export function linksFromExternalIds(type: string, ids: readonly ExternalId[]): 
   const out: ExternalLinkView[] = [];
   const get = (k: ExternalId['kind']) => ids.find((i) => i.kind === k)?.value ?? null;
   const imdb = get('imdb');
-  if ((type === 'movie' || type === 'tv') && imdb) {
+  if ((type === 'movie' || type === 'tv' || type === 'anime') && imdb) {
     const url = imdbUrl(imdb);
     if (url) out.push({ kind: 'imdb', label: 'IMDb', url });
   }
@@ -149,12 +171,13 @@ export function linksFromExternalIds(type: string, ids: readonly ExternalId[]): 
     }
   }
   const tmdb = get('tmdb');
-  if (tmdb && /^\d+$/.test(tmdb) && (type === 'movie' || type === 'tv')) {
-    out.push({
-      kind: 'tmdb',
-      label: 'TMDB',
-      url: `https://www.themoviedb.org/${type === 'tv' ? 'tv' : 'movie'}/${tmdb}`,
-    });
+  // Anime stores its TMDB id with a prefix ("tv:123" / "movie:123") because TMDB keeps the two apart;
+  // a bare number is only trusted for the matching movie/tv type. Uncertain ids produce no link.
+  if (tmdb) {
+    const m = /^(?:(tv|movie):)?(\d{1,12})$/.exec(tmdb);
+    const kind = m?.[1] ?? (type === 'tv' ? 'tv' : type === 'movie' ? 'movie' : null);
+    if (m && kind && (type === 'movie' || type === 'tv' || (type === 'anime' && m[1])))
+      out.push({ kind: 'tmdb', label: 'TMDB', url: `https://www.themoviedb.org/${kind}/${m[2]}` });
   }
   const tvmaze = get('tvmaze');
   if (tvmaze && /^\d+$/.test(tvmaze) && type === 'tv') {
@@ -173,6 +196,10 @@ export function linksFromExternalIds(type: string, ids: readonly ExternalId[]): 
   const mal = get('mal');
   if (mal && /^\d+$/.test(mal) && type !== 'game') {
     out.push({ kind: 'mal', label: 'MyAnimeList', url: `https://myanimelist.net/${animeOrManga}/${mal}` });
+  }
+  const kitsu = get('kitsu');
+  if (kitsu && /^\d+$/.test(kitsu) && type === 'anime') {
+    out.push({ kind: 'kitsu', label: 'Kitsu', url: `https://kitsu.app/anime/${kitsu}` });
   }
   const wikidata = get('wikidata');
   if (wikidata && /^Q\d+$/.test(wikidata)) {
