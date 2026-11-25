@@ -76,5 +76,22 @@
     "dist:linux": "npm run build && electron-builder --publish never --linux AppImage deb rpm tar.gz",
     "licenses": "node scripts/licenses.mjs"
   },
-  "homepage": "https://github.com/OkuuCrow/maybe-pile"
+  "homepage": "https://github.com/OkuuCrow/maybe-pile",
+  "overrides": {
+    "app-builder-lib": {
+      "minimatch": "^11.0.9",
+      "@electron/universal": {
+        "minimatch": "^11.0.9",
+        "dir-compare": {
+          "minimatch": "^3.1.5"
+        }
+      },
+      "@electron/asar": {
+        "minimatch": "^3.1.5"
+      },
+      "filelist": {
+        "minimatch": "^5.1.9"
+      }
+    }
+  }
 }
