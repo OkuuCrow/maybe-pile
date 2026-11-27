@@ -350,6 +350,7 @@ function Shell() {
           </div>
         )}
         <SimpleOfferBanner />
+        <RatingPromptHost />
         {app.route.name === 'dashboard' && (simple ? <SimpleHome /> : <Dashboard />)}
         {app.route.name === 'trash' && <TrashPage />}
         {app.route.name === 'changes' && <ChangesPage />}
@@ -376,7 +377,6 @@ function Shell() {
         </Dialog>
       )}
       <FirstRun />
-      <RatingPromptHost />
       {app.paletteOpen && <PaletteHost />}
       {app.captureOpen && !info?.readOnly && <QuickCapture onClose={() => app.setCaptureOpen(false)} />}
       {app.shortcutsOpen && (

@@ -759,18 +759,16 @@ html[data-reduce-effects='true'] .item-backdrop {
 
 /* ---------- rating prompt ---------- */
 .rating-prompt {
-  position: fixed;
-  right: 16px;
-  bottom: 96px;
-  z-index: 40;
-  width: min(360px, calc(100vw - 32px));
+  /* Inline card in the page flow: it never covers content (non-blocking). */
   display: grid;
   gap: var(--mp-space);
+  max-width: 520px;
+  margin: 0 0 calc(var(--mp-space) * 2);
   padding: calc(var(--mp-space) * 1.5);
   background: var(--mp-surface);
   border: 1px solid var(--mp-border);
+  border-left: 4px solid var(--mp-accent);
   border-radius: var(--mp-radius);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 20%);
 }
 .rating-prompt-title {
   margin: 0;
