@@ -23,11 +23,22 @@ import { ProgressService } from '../../src/main/services/progress-service';
 import { ProviderService } from '../../src/main/services/provider-service';
 import { SecretsService } from '../../src/main/services/secrets-service';
 import { App } from '../../src/renderer/app/App';
+import { DEFAULT_SETTINGS, writeSettings } from '../../src/db/repositories/config-repo';
 import { tempDir } from '../helpers/db';
 import { FakeHttp, instantLimiter } from '../helpers/http';
 import { FakeClock, createInput } from '../helpers/services';
+import { join } from 'node:path';
+import { NotificationService } from '../../src/main/services/notification-service';
+import { createRecordingNotifier } from '../../src/notifications/adapters/linux';
+import { fakeLinuxInstaller } from '../helpers/notify';
+import type { PlannedNotification } from '../../src/notifications/engine/types';
+import { createPack21Services, type Pack21Services } from '../../src/main/services/pack21-services';
 
 export interface UiEnv {
+  pack21: Pack21Services;
+  notifications: NotificationService;
+  shown: PlannedNotification[];
+  installerFs: Map<string, string>;
   library: LibraryService;
   progress: ProgressService;
   features: FeatureServices;
@@ -37,13 +48,22 @@ export interface UiEnv {
   cleanup: () => void;
 }
 
-export function installBridge(): UiEnv {
+/** `level: 'simple'` gives a brand-new install (Simple Mode + first run); the default is an existing Full-mode user. */
+export function installBridge(opts: { level?: 'simple' | 'full'; firstRun?: boolean } = {}): UiEnv {
   const t = tempDir('mp-ui-');
   const paths = pathsFor(t.dir);
   const log = new MemoryLogger();
   const clock = new FakeClock(new Date());
   const dbm = new DatabaseManager(paths, log);
   dbm.open();
+  writeSettings(dbm.db, {
+    interface: {
+      ...DEFAULT_SETTINGS.interface,
+      level: opts.level ?? 'full',
+      firstRunDone: !(opts.firstRun ?? false),
+      simpleOfferDismissed: true,
+    },
+  });
   const ctx: ServiceContext = { db: () => dbm.db, clock, log, paths, appVersion: '1.0.0-test' };
   const http = new FakeHttp();
   const secrets = new SecretsService(
@@ -74,7 +94,34 @@ export function installBridge(): UiEnv {
     openPath: async () => undefined,
     openExternal: async (u) => void opened.push(u),
   };
+  const rec = createRecordingNotifier('test-os');
+  const fake = fakeLinuxInstaller();
+  const notifications = new NotificationService(
+    ctx,
+    {
+      os: 'linux',
+      installer: fake.installer,
+      notifier: rec.notifier,
+      inApp: null,
+      trayAvailable: () => true,
+      osTimeZone: () => 'Europe/Berlin',
+    },
+    { statePath: join(t.dir, 'notify-state.sqlite') },
+  );
+  const pack21 = createPack21Services(ctx, {
+    library,
+    progress,
+    providers,
+    artwork,
+    features,
+    decodeImage: () => null,
+    root: t.dir,
+    activeLibraryId: 'default',
+    relaunch: () => undefined,
+  });
   const handlers = buildHandlers({
+    notifications,
+    pack21,
     ctx,
     library,
     progress,
@@ -115,10 +162,18 @@ export function installBridge(): UiEnv {
     ...buildApi((c, p) =>
       dispatch(c, { frameUrl: 'app://maybepile/', isMainFrame: true, webContentsId: 1 }, p),
     ),
-    events: { onMenuCommand: () => () => undefined },
+    events: {
+      onMenuCommand: () => () => undefined,
+      onInAppNotification: () => () => undefined,
+      onOpenItem: () => () => undefined,
+    },
   };
   window.maybePile = api as unknown as MaybePileApi;
   return {
+    pack21,
+    notifications,
+    shown: rec.shown,
+    installerFs: fake.fs.files,
     library,
     progress,
     features,
@@ -126,6 +181,7 @@ export function installBridge(): UiEnv {
     secrets,
     platform,
     cleanup: () => {
+      notifications.close();
       dbm.close();
       t.cleanup();
     },

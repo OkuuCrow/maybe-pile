@@ -22,7 +22,7 @@ import {
 } from '../../../domain/themes';
 import { HEX_COLOR_RE } from '../../../domain/contrast';
 import { call, errorOf, getApi, useAsync } from '../../app/api';
-import { SETTINGS_TABS, applyTheme, useApp, type SettingsTab } from '../../app/context';
+import { SETTINGS_TABS, applyTheme, switchToFull, useApp, type SettingsTab } from '../../app/context';
 import { S, fmtBytes, typeLabel } from '../../app/strings';
 import { useToast } from '../../app/toast';
 import { ConfirmDialog } from '../../components/Dialog';
@@ -36,41 +36,70 @@ import { Pack2Settings } from './Pack2Settings';
 import { SyncSettings } from './SyncSettings';
 import { SteamSetupForm } from '../import/SteamSetup';
 import { REGIONS } from './regions';
+import { isShown, labelFor } from '../../../shared/feature-registry';
+import { AppearanceExtras } from './AppearanceExtras';
+import { InterfaceTab } from './InterfaceTab';
+import { AdvancedTab } from './AdvancedTab';
+import { BackupDestination, CheckupPanel } from './BackupExtras';
+import { NotificationsSettings } from '../notifications/NotificationsSettings';
+import { SimpleReminders } from '../notifications/SimpleReminders';
 
 const TAB_LABELS: Record<SettingsTab, string> = {
   appearance: 'Appearance',
+  interface: 'Interface',
+  notifications: 'Notifications',
   layout: 'Layout',
   providers: 'Providers',
   library: 'Custom fields & series',
   features: 'Features',
   backup: 'Backup & Restore',
   data: 'Data & Behavior',
+  advanced: 'Advanced',
   about: 'About',
 };
 
-export function Settings({ tab }: { tab: SettingsTab }) {
+export function Settings({ tab: requested }: { tab: SettingsTab }) {
+  const app = useApp();
+  const level = app.level;
+  const visible = SETTINGS_TABS.filter((t) => isShown(`settings.${t}`, level));
+  // An advanced section opened by link in Simple Mode falls back to Appearance with an offer to switch.
+  const hiddenRequest = !visible.includes(requested);
+  const tab = hiddenRequest ? 'appearance' : requested;
+  const label = (t: SettingsTab) =>
+    level === 'simple' ? labelFor(`settings.${t}`, 'simple') : TAB_LABELS[t];
   return (
     <div className="page settings-page">
       <h1>{S.nav.settings}</h1>
+      {hiddenRequest && (
+        <Notice kind="info">
+          “{TAB_LABELS[requested]}” is part of Full mode.{' '}
+          <button type="button" className="button button-small" onClick={() => void switchToFull(app)}>
+            Turn on Full mode
+          </button>
+        </Notice>
+      )}
       <div className="settings-layout">
         <nav aria-label="Settings sections" className="settings-nav">
           <ul>
-            {SETTINGS_TABS.map((t) => (
+            {visible.map((t) => (
               <li key={t}>
                 <a
                   href={`#/settings/${t}`}
                   aria-current={t === tab ? 'page' : undefined}
                   className={t === tab ? 'nav-current' : undefined}
                 >
-                  {TAB_LABELS[t]}
+                  {label(t)}
                 </a>
               </li>
             ))}
           </ul>
         </nav>
         <section className="settings-content" aria-labelledby="settings-heading">
-          <h2 id="settings-heading">{TAB_LABELS[tab]}</h2>
-          {tab === 'appearance' && <AppearanceTab />}
+          <h2 id="settings-heading">{label(tab)}</h2>
+          {tab === 'appearance' && (level === 'simple' ? <SimpleAppearance /> : <AppearanceTab />)}
+          {tab === 'appearance' && <AppearanceExtras />}
+          {tab === 'interface' && <InterfaceTab />}
+          {tab === 'notifications' && (level === 'simple' ? <SimpleReminders /> : <NotificationsSettings />)}
           {tab === 'layout' && <LayoutTab />}
           {tab === 'providers' && <ProvidersTab />}
           {tab === 'library' && <LibraryTab />}
@@ -80,12 +109,53 @@ export function Settings({ tab }: { tab: SettingsTab }) {
               <Pack2Settings />
             </>
           )}
-          {tab === 'backup' && <BackupTab />}
+          {tab === 'backup' && (
+            <>
+              <BackupTab />
+              <BackupDestination />
+              <CheckupPanel />
+            </>
+          )}
           {tab === 'data' && <DataTab />}
+          {tab === 'advanced' && <AdvancedTab />}
           {tab === 'about' && <AboutTab />}
         </section>
       </div>
     </div>
+  );
+}
+
+/** Simple Mode appearance: Light / Dark / System only (custom themes stay as saved for Full mode). */
+function SimpleAppearance() {
+  const app = useApp();
+  const toast = useToast();
+  const cur = app.settings?.activeThemeId ?? 'system';
+  const choose = async (id: string) => {
+    try {
+      await app.updateSettings({ activeThemeId: id });
+      app.reloadTheme();
+    } catch (e) {
+      toast.error(errorOf(e));
+    }
+  };
+  const opts: [string, string][] = [
+    ['system', 'Match my computer'],
+    ['pile-light', 'Light'],
+    ['pile-dark', 'Dark'],
+  ];
+  return (
+    <fieldset className="mode-picker">
+      <legend>Theme</legend>
+      {opts.map(([id, label]) => (
+        <label key={id} className={`mode-option ${cur === id ? 'mode-selected' : ''}`}>
+          <input type="radio" name="simple-theme" checked={cur === id} onChange={() => void choose(id)} />{' '}
+          <strong>{label}</strong>
+        </label>
+      ))}
+      {!['system', 'pile-light', 'pile-dark'].includes(cur) && (
+        <p className="field-hint">You use a custom theme from Full mode; it stays until you pick one here.</p>
+      )}
+    </fieldset>
   );
 }
 

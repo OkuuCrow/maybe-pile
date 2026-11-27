@@ -164,3 +164,19 @@ Default order (Settings → Features → Anime): Kitsu, MyAnimeList, TMDB, AniLi
 2. Add it to `ART_SOURCES` in `src/providers/art-registry.ts`, and add its hosts to `OUTBOUND_HOSTS`. A test asserts that every art host is declared.
 3. Add fixture tests (see `tests/unit/pack2-providers.test.ts`) covering auth placement, dropping off-host URLs, NSFW handling and the not-configured state.
 4. Record the terms review, with its date, in the table above. Record any product choices in `product-decisions.md`.
+
+## 2.1: key-free artwork sources (terms read 2026-11-26)
+
+| Source | Covers | Key | Rate limit | Caching | Attribution | Hosts | Status |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TVmaze (`tvmaze-art`) | TV posters, backgrounds, banners, logos (by stored TVmaze id or IMDb lookup — never a guessed title) | none | ≥ 20 calls / 10 s per IP (we use 18/10 s); 429 → retry | allowed (“Images can safely be cached indefinitely”) | “TVmaze (CC BY-SA)” with link | api.tvmaze.com, static.tvmaze.com | **enabled** |
+| Wikimedia Commons (`commons`) | posters (P3383), logos (P154), images (P18) via the item's Wikidata id | none | no published number; ≤ 5 requests / 10 s, sequential | per file license; only PD/CC0/CC BY/CC BY-SA accepted | author + license per image | www.wikidata.org, commons.wikimedia.org, upload.wikimedia.org | **enabled** |
+| Apple iTunes Search API | movie/TV artwork | none | ~20/min | — | — | — | **excluded**: artwork may be used only to promote store content next to a store badge |
+| Internet Archive | public-domain films | — | not documented | — | — | — | **excluded**: terms page unreadable, thumbnail API undocumented (unverified) |
+| Unofficial IMDb-keyed image services | posters/backgrounds | none | — | — | — | — | **excluded**: no clear license for third-party apps |
+| TMDB, fanart.tv | movies/TV | optional free key | — | — | — | — | unchanged (“Add a free key to unlock more images”) |
+
+Coverage is honest in the UI: key-free movie posters are far less complete than TMDB. With no match the
+picker shows the generated cover, a local image option and the “add a free key” hint. Toggles: Settings →
+Advanced → Images and storage. Fixture tests: `tests/unit/pack21-domain.test.ts` (success, no id, 404, 429,
+schema drift, license filtering, SVG rejection, host allowlist).

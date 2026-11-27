@@ -118,3 +118,23 @@ Anime metadata travels inside each item's `meta`.
 `.mpbackup` contains the whole database, so every new table and all selected artwork files are included automatically. Selected slot art counts as referenced and is never garbage-collected.
 
 Sync state (device ID, baselines, conflicts) isn't part of the JSON export. A `.mpbackup` restore clears it and turns sync off, so the restored library gets a fresh identity.
+
+## 2.1 (JSON `formatVersion` 4)
+
+- **Full backups** contain the whole library database: reminders, all 2.1 settings, checklists, loans and
+  people, saved views, templates, journal, time goals, skipped episodes, the change log and the offline queue —
+  and now also **Recently deleted** items (with their deletion time, so they still purge on schedule).
+- **JSON export** adds a `pack21` section: reminders, next steps, checklists, people/loans/recommenders
+  (third-party names are included by design), saved views, templates, journal, time goals, item flags,
+  skipped-episode marks, Recently-deleted markers, and the 2.1 settings. Not exported: the change log, the
+  offline queue and palette caches (local/regenerable).
+- **Not in any backup/export**: `notify-state.sqlite` (notification history, snoozes, pause) and background
+  registrations (scheduled task, systemd units, login item, autostart). On a new computer, turn reminders on
+  again: a restored background mode falls back to “While the app is open” with a notice until you confirm
+  the components again.
+- Importing JSON settings applies only keys the target library never stored; a background mode is imported as
+  “While the app is open”.
+- **Multiple libraries**: backups/exports always cover the library that is open (its name is shown when more
+  than one exists). Back up each library separately (switch, then back up). A deleted library leaves a database
+  copy `backups/deleted-library-<id>-<time>.sqlite` in the main data folder.
+- The backup folder check warns about same-drive, cloud-sync and removable destinations.

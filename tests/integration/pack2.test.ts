@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Db } from '../../src/db/connection';
 import { LATEST_SCHEMA_VERSION, migrate, MIGRATIONS } from '../../src/db/migrate';
 import { buildJsonExport } from '../../src/main/services/export-service';
-import { ExportEnvelopeSchema } from '../../src/main/services/portable-format';
+import { EXPORT_FORMAT_VERSION, ExportEnvelopeSchema } from '../../src/main/services/portable-format';
 import { tempDir } from '../helpers/db';
 import { image, json, PNG_1PX } from '../helpers/http';
 import { makeFeatureEnv, type FeatureEnv } from '../helpers/features';
@@ -539,7 +539,7 @@ describe('portability (formatVersion 3)', () => {
     const env1 = buildJsonExport(e.db, '2.0.0', new Date('2025-03-10T00:00:00Z'));
     const text = JSON.stringify(env1);
     expect(text).not.toContain('SECRET-KEY-VALUE');
-    expect(env1.formatVersion).toBe(3);
+    expect(env1.formatVersion).toBe(EXPORT_FORMAT_VERSION);
     expect(ExportEnvelopeSchema.safeParse(env1).success).toBe(true);
     expect((env1.data.settings as Record<string, unknown>)['sync']).toBeUndefined();
 

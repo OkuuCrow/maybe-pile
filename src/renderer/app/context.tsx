@@ -19,19 +19,28 @@ export type Route =
   | { name: 'health' }
   | { name: 'upcoming' }
   | { name: 'pile' }
-  | { name: 'import'; tab: ImportTab };
+  | { name: 'import'; tab: ImportTab }
+  /* 2.1 */
+  | { name: 'trash' }
+  | { name: 'changes' }
+  | { name: 'wall' }
+  | { name: 'triage' }
+  | { name: 'people' };
 
 export const IMPORT_TABS = ['sources', 'trackers', 'history'] as const;
 export type ImportTab = (typeof IMPORT_TABS)[number];
 
 export const SETTINGS_TABS = [
   'appearance',
+  'interface',
+  'notifications',
   'layout',
   'providers',
   'library',
   'features',
   'backup',
   'data',
+  'advanced',
   'about',
 ] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
@@ -48,6 +57,11 @@ export function parseHash(hash: string): Route {
   if (a === 'health') return { name: 'health' };
   if (a === 'upcoming') return { name: 'upcoming' };
   if (a === 'pile') return { name: 'pile' };
+  if (a === 'trash') return { name: 'trash' };
+  if (a === 'changes') return { name: 'changes' };
+  if (a === 'wall') return { name: 'wall' };
+  if (a === 'triage') return { name: 'triage' };
+  if (a === 'people') return { name: 'people' };
   if (a === 'import')
     return {
       name: 'import',
@@ -86,6 +100,10 @@ interface AppCtx {
   navigate: (r: Route) => void;
   settings: AppSettings | null;
   updateSettings: (p: SettingsPatch) => Promise<void>;
+  /** Re-reads settings (after notify:apply, which owns the notification settings). */
+  reloadSettings: () => void;
+  /** 'simple' | 'full' (§13). */
+  level: 'simple' | 'full';
   layouts: LayoutsView | null;
   setLayouts: (l: LayoutsView) => void;
   info: AppInfo | null;
@@ -95,7 +113,9 @@ interface AppCtx {
   theme: ActiveThemeView | null;
   reloadTheme: () => void;
   addOpen: boolean;
-  openAdd: () => void;
+  /** Opens Add, optionally prefilled with a title (omnibox "Add “X”"). */
+  openAdd: (title?: string) => void;
+  addTitle: string;
   closeAdd: () => void;
   shortcutsOpen: boolean;
   setShortcutsOpen: (v: boolean) => void;
@@ -106,6 +126,12 @@ interface AppCtx {
 }
 
 const Ctx = createContext<AppCtx | null>(null);
+
+/** Turns on Full mode (used by "Turn on Full mode to use this" offers). */
+export function switchToFull(app: Pick<AppCtx, 'settings' | 'updateSettings'>): Promise<void> {
+  if (!app.settings) return Promise.resolve();
+  return app.updateSettings({ interface: { ...app.settings.interface, level: 'full' } });
+}
 
 export function useApp(): AppCtx {
   const c = useContext(Ctx);
@@ -129,6 +155,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ActiveThemeView | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
+  const [addTitle, setAddTitle] = useState('');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -182,6 +209,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const s = await call(getApi().settings.update(p));
     setSettings(s);
   }, []);
+  const reloadSettings = useCallback(() => {
+    void call(getApi().settings.get())
+      .then(setSettings)
+      .catch(() => undefined);
+  }, []);
+  const level = settings?.interface.level ?? 'full';
 
   const value = useMemo<AppCtx>(
     () => ({
@@ -189,6 +222,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       navigate,
       settings,
       updateSettings,
+      reloadSettings,
+      level,
       layouts,
       setLayouts,
       info,
@@ -198,7 +233,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       theme,
       reloadTheme: () => setThemeTick((t) => t + 1),
       addOpen,
-      openAdd: () => setAddOpen(true),
+      openAdd: (title?: string) => {
+        setAddTitle(typeof title === 'string' ? title : '');
+        setAddOpen(true);
+      },
+      addTitle,
       closeAdd: () => setAddOpen(false),
       shortcutsOpen,
       setShortcutsOpen,
@@ -212,11 +251,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       navigate,
       settings,
       updateSettings,
+      reloadSettings,
+      level,
       layouts,
       info,
       dataVersion,
       theme,
       addOpen,
+      addTitle,
       shortcutsOpen,
       paletteOpen,
       captureOpen,

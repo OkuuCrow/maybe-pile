@@ -20,6 +20,7 @@ import { migration0003 } from './migrations/0003_up_next_and_ids';
 import { migration0004 } from './migrations/0004_feature_pack';
 import { migration0005 } from './migrations/0005_expansion_two';
 import { migration0006 } from './migrations/0006_sync';
+import { migration0007 } from './migrations/0007_notifications_pack';
 
 export interface Migration {
   version: number;
@@ -42,6 +43,7 @@ export const MIGRATIONS: readonly Migration[] = [
   migration0004,
   migration0005,
   migration0006,
+  migration0007,
 ];
 export const LATEST_SCHEMA_VERSION = MIGRATIONS.length;
 

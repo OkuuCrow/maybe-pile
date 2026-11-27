@@ -18,7 +18,7 @@ import {
   type SortField,
   type Status,
 } from '../../../shared/enums';
-import { DEFAULT_LIBRARY_QUERY, type LibraryQuery } from '../../../shared/schemas';
+import { DEFAULT_LIBRARY_QUERY, LibraryQuerySchema, type LibraryQuery } from '../../../shared/schemas';
 import type { ItemSummary, TagCount } from '../../../shared/types';
 import { DEFAULT_LAYOUTS } from '../../../domain/layouts';
 import { ratingToStars } from '../../../domain/rating';
@@ -41,7 +41,11 @@ import {
   StatusBadge,
   TypeBadge,
 } from '../../components/Bits';
-import { ConfirmDialog } from '../../components/Dialog';
+import { ConfirmDialog, Dialog } from '../../components/Dialog';
+import { TextField } from '../../components/Fields';
+import { QuickActions } from '../simple/QuickActions';
+import { BulkEditDialog } from './BulkEditDialog';
+import { SharePageDialog } from './SharePageDialog';
 import { IconClose, IconGrid, IconList, IconSearch } from '../../components/Icons';
 
 const PAGE = 200;
@@ -60,7 +64,12 @@ function readHint(): Partial<LibraryQuery> | null {
     const raw = sessionStorage.getItem('mp-library-hint');
     sessionStorage.removeItem('mp-library-hint');
     if (!raw) return null;
-    const h = JSON.parse(raw) as {
+    const parsed = JSON.parse(raw) as unknown;
+    // A saved view passes its whole (validated) query.
+    const full = LibraryQuerySchema.safeParse(parsed);
+    if (full.success) return { ...full.data, offset: 0, limit: PAGE };
+    const h = parsed as {
+      statuses?: unknown;
       types?: unknown;
       tags?: unknown;
       upNextOnly?: unknown;
@@ -73,6 +82,8 @@ function readHint(): Partial<LibraryQuery> | null {
     if (h.health === 'stale' || h.health === 'snoozed') out.health = h.health;
     if (Array.isArray(h.types))
       out.types = h.types.filter((t): t is MediaType => (MEDIA_TYPES as readonly unknown[]).includes(t));
+    if (Array.isArray(h.statuses))
+      out.statuses = h.statuses.filter((t): t is Status => (STATUSES as readonly unknown[]).includes(t));
     if (Array.isArray(h.tags))
       out.tags = h.tags.filter((t): t is string => typeof t === 'string').slice(0, 10);
     return out;
@@ -262,6 +273,7 @@ export function Library() {
     ),
   };
 
+  const simple = app.level === 'simple';
   return (
     <div className="page library-page">
       <div className="page-header">
@@ -270,8 +282,19 @@ export function Library() {
           {loading && items.length === 0 ? S.common.loading : S.library.results(total)}
         </p>
       </div>
-      <div className="library-toolbar">{layout.filter((c) => c.visible).map((c) => blocks[c.id])}</div>
-      {activeFilterCount > 0 && (
+      {simple ? (
+        <SimpleToolbar query={query} patch={patch} search={blocks['search']} bulkBar={blocks['bulkBar']} />
+      ) : (
+        <>
+          <div className="library-toolbar">{layout.filter((c) => c.visible).map((c) => blocks[c.id])}</div>
+          <FullExtras
+            query={query}
+            setQuery={(q) => (setTextDraft(q.text), setQuery({ ...q, offset: 0, limit: PAGE }))}
+            selected={selected}
+          />
+        </>
+      )}
+      {!simple && activeFilterCount > 0 && (
         <ActiveChips
           lists={lists.data ?? []}
           query={query}
@@ -297,7 +320,7 @@ export function Library() {
           <EmptyState
             title={S.library.emptyTitle}
             action={
-              <button type="button" className="button button-primary" onClick={app.openAdd}>
+              <button type="button" className="button button-primary" onClick={() => app.openAdd()}>
                 {S.nav.add}
               </button>
             }
@@ -1137,8 +1160,223 @@ function ItemCard({
             <span className="muted item-tags">{item.tags.join(' · ')}</span>
           )}
           <ProgressBar percent={item.progressPercent} label={item.progressLabel} />
+          {item.nextStep && !item.nextStepSpoiler && (
+            <span className="next-step-line">Next: {item.nextStep}</span>
+          )}
+          {item.checklist && <ChecklistMeter done={item.checklist.done} total={item.checklist.total} />}
+          {item.waitingForDetails && <span className="badge">Waiting for details</span>}
         </span>
       </a>
+      <QuickActions item={item} compact />
+    </div>
+  );
+}
+
+function ChecklistMeter({ done, total }: { done: number; total: number }) {
+  const app = useApp();
+  if (app.level !== 'full') return null;
+  return (
+    <span className="checklist-meter">
+      Checklist {done} of {total}
+      <span className="meter" aria-hidden="true">
+        <span style={{ width: `${Math.round((done / Math.max(1, total)) * 100)}%` }} />
+      </span>
+    </span>
+  );
+}
+
+const SIMPLE_SORTS: { value: string; label: string; sort: SortField; direction: 'asc' | 'desc' }[] = [
+  { value: 'updated', label: 'Recently updated', sort: 'updatedAt', direction: 'desc' },
+  { value: 'title', label: 'Title', sort: 'title', direction: 'asc' },
+  { value: 'rating', label: 'Rating', sort: 'rating', direction: 'desc' },
+  { value: 'added', label: 'Date added', sort: 'dateAdded', direction: 'desc' },
+];
+
+/** Simple Mode: one search box, type tabs (tracked types), one status filter, four sorts. */
+function SimpleToolbar({
+  query,
+  patch,
+  search,
+  bulkBar,
+}: {
+  query: LibraryQuery;
+  patch: (p: Partial<LibraryQuery>) => void;
+  search: ReactNode;
+  bulkBar: ReactNode;
+}) {
+  const app = useApp();
+  const counts = useAsync(() => call(getApi().items.dashboard()), [app.dataVersion]);
+  const hidden = new Set(app.settings?.interface.hiddenTypes ?? []);
+  // Hidden types that still contain items stay visible (hiding never hides data).
+  const types = MEDIA_TYPES.filter((t) => !hidden.has(t) || (counts.data?.countsByType[t] ?? 0) > 0);
+  const current = query.types.length === 1 ? query.types[0] : null;
+  const sortValue =
+    SIMPLE_SORTS.find((x) => x.sort === query.sort && x.direction === query.direction)?.value ?? 'updated';
+  return (
+    <div className="library-toolbar simple-toolbar">
+      {search}
+      <div role="tablist" aria-label="Type" className="tabs type-tabs">
+        {[null, ...types].map((t) => (
+          <button
+            key={t ?? 'all'}
+            type="button"
+            role="tab"
+            aria-selected={current === t || (t === null && query.types.length === 0)}
+            className="tab"
+            onClick={() => patch({ types: t ? [t] : [] })}
+          >
+            {t ? typeLabelPlural(t) : 'All'}
+          </button>
+        ))}
+      </div>
+      <div className="toolbar-block row">
+        <label htmlFor="simple-status">Status</label>
+        <select
+          id="simple-status"
+          className="input input-inline"
+          value={query.statuses.length === 1 ? query.statuses[0] : ''}
+          onChange={(e) => patch({ statuses: e.target.value ? [e.target.value as Status] : [] })}
+        >
+          <option value="">Any status</option>
+          {STATUSES.map((st) => (
+            <option key={st} value={st}>
+              {statusLabel(st)}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="simple-sort">Sort</label>
+        <select
+          id="simple-sort"
+          className="input input-inline"
+          value={sortValue}
+          onChange={(e) => {
+            const o = SIMPLE_SORTS.find((x) => x.value === e.target.value);
+            if (o) patch({ sort: o.sort, direction: o.direction });
+          }}
+        >
+          {SIMPLE_SORTS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      {bulkBar}
+    </div>
+  );
+}
+
+/** Full mode: saved views, save current view, bulk edit and share page for the selection. */
+function FullExtras({
+  query,
+  setQuery,
+  selected,
+}: {
+  query: LibraryQuery;
+  setQuery: (q: LibraryQuery) => void;
+  selected: Set<string>;
+}) {
+  const app = useApp();
+  const toast = useToast();
+  const views = useAsync(() => call(getApi().views.list()), [app.dataVersion]);
+  const [saving, setSaving] = useState(false);
+  const [name, setName] = useState('');
+  const [bulk, setBulk] = useState(false);
+  const [share, setShare] = useState(false);
+  return (
+    <div className="library-extras row-wrap">
+      {(views.data ?? []).length > 0 && (
+        <div className="toolbar-block row">
+          <label htmlFor="views-select">Views</label>
+          <select
+            id="views-select"
+            className="input input-inline"
+            value=""
+            onChange={(e) => {
+              const v = (views.data ?? []).find((x) => x.id === e.target.value);
+              if (v) {
+                setQuery(v.query);
+                if (v.notices.length) toast.show({ kind: 'info', message: v.notices.join(' ') });
+              }
+            }}
+          >
+            <option value="">Choose a view…</option>
+            {(views.data ?? []).map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <button type="button" className="button button-small" onClick={() => setSaving(true)}>
+        Save view…
+      </button>
+      <a className="button button-small" href="#/wall">
+        Cover wall
+      </a>
+      <a className="button button-small" href="#/triage">
+        Triage
+      </a>
+      <a className="button button-small" href="#/trash">
+        Recently deleted
+      </a>
+      {selected.size > 0 && (
+        <>
+          <button type="button" className="button button-small" onClick={() => setBulk(true)}>
+            Edit {selected.size} selected…
+          </button>
+          <button type="button" className="button button-small" onClick={() => setShare(true)}>
+            Share page…
+          </button>
+        </>
+      )}
+      {saving && (
+        <Dialog
+          title="Save this view"
+          onClose={() => setSaving(false)}
+          size="small"
+          footer={
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!name.trim()}
+              onClick={() =>
+                void call(
+                  getApi().views.save({
+                    id: null,
+                    name,
+                    query: { ...query, offset: 0, limit: 200 },
+                    viewMode: app.settings?.libraryView ?? 'grid',
+                    pinned: false,
+                  }),
+                )
+                  .then(() => {
+                    toast.success(`Saved view “${name}”.`);
+                    setSaving(false);
+                    setName('');
+                    views.reload();
+                  })
+                  .catch((e: unknown) => toast.error(errorOf(e)))
+              }
+            >
+              Save
+            </button>
+          }
+        >
+          <TextField
+            label="Name"
+            value={name}
+            onChange={setName}
+            maxLength={80}
+            hint="Saves the current search, filters, sort and view."
+          />
+        </Dialog>
+      )}
+      {bulk && <BulkEditDialog ids={[...selected]} onClose={() => setBulk(false)} />}
+      {share && (
+        <SharePageDialog source={{ kind: 'items', ids: [...selected] }} onClose={() => setShare(false)} />
+      )}
     </div>
   );
 }

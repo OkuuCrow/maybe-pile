@@ -139,6 +139,18 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
   const nextAbs = firstUnwatched === -1 ? Number.POSITIVE_INFINITY : firstUnwatched + 1;
   // Optimistic checkmarks: a ticked box shows immediately and reverts if the save fails.
   const [pending, setPending] = useState<Record<string, boolean>>({});
+  /** §16.8 Skipped (filler/recap): counts toward “caught up”, never as watched or watch time. */
+  const skip = async (ids: string[], skipped: boolean) => {
+    if (ids.length === 0) return;
+    await run(async () => {
+      await call(getApi().extras.skipEpisodes({ itemId: item.id, episodeIds: ids, skipped }));
+      return call(getApi().items.get({ id: item.id })).then((it) => ({
+        item: it,
+        suggestions: [],
+        applied: [],
+      }));
+    });
+  };
   const toggle = async (ids: string[], watched: boolean, scope: 'episode' | 'season' | 'upTo') => {
     setPending((p) => ({ ...p, ...Object.fromEntries(ids.map((id) => [id, watched])) }));
     try {
@@ -223,6 +235,19 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
                   <button
                     type="button"
                     className="button button-small"
+                    disabled={busy || listed === 0}
+                    onClick={() =>
+                      void skip(
+                        s.episodes.filter((e) => !e.watched && !e.skipped).map((e) => e.id),
+                        true,
+                      )
+                    }
+                  >
+                    Mark unwatched as skipped
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-small"
                     onClick={() => setEpisodeEdit({ season: s, episode: null })}
                   >
                     Add episode
@@ -259,6 +284,7 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
                             (e.title ?? <span className="muted">Untitled</span>)
                           )}
                           {e.airDate && <span className="muted"> · {e.airDate}</span>}
+                          {e.skipped && <span className="badge"> Skipped</span>}
                         </label>
                         {!readOnly && (
                           <span className="episode-actions">
@@ -270,6 +296,17 @@ function TvPanel({ item, readOnly, onOutcome }: PanelProps) {
                                 aria-label={`Mark all up to ${code} watched`}
                               >
                                 Up to here
+                              </button>
+                            )}
+                            {!e.watched && (
+                              <button
+                                type="button"
+                                className="button button-tiny"
+                                onClick={() => void skip([e.id], !e.skipped)}
+                                aria-label={`${e.skipped ? 'Un-skip' : 'Skip'} ${code}`}
+                                aria-pressed={!!e.skipped}
+                              >
+                                {e.skipped ? 'Un-skip' : 'Skip'}
                               </button>
                             )}
                             <button

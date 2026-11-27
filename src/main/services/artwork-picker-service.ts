@@ -186,13 +186,15 @@ export class ArtworkPickerService {
     for (const s of ART_SOURCES) {
       if (!s.supports.includes(lookup.type)) continue;
       if (!this.providers.sourceEnabled(s.id)) continue;
+      const keyFree = readSettings(this.ctx.db()).settings.artworkSources;
+      if ((s.id === 'tvmaze-art' && !keyFree.tvmaze) || (s.id === 'commons' && !keyFree.commons)) continue;
       const ctx = this.providers.sourceContext(s.id, s.rateLimit, signal);
       if (!s.isConfigured(ctx.keys)) {
         sources.push({
           sourceId: s.id,
           sourceName: s.displayName,
           state: 'not-configured',
-          message: `Add a ${s.displayName} key in Settings → Providers to see its artwork.`,
+          message: `Add a free ${s.displayName} key in Settings → Providers to unlock more images.`,
           count: 0,
         });
         continue;

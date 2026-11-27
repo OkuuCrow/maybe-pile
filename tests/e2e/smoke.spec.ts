@@ -10,6 +10,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } fro
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { skipWelcomeAndUseFullMode } from './first-run';
 
 const root = process.cwd();
 const userData = mkdtempSync(join(tmpdir(), 'mp-e2e-data-'));
@@ -58,6 +59,7 @@ async function addManual(
 
 test('Maybe Pile end-to-end smoke', async () => {
   let { app, page } = await launch();
+  await skipWelcomeAndUseFullMode(page);
   const consoleErrors: string[] = [];
   page.on('pageerror', (e) => consoleErrors.push(e.message));
 
@@ -85,7 +87,7 @@ test('Maybe Pile end-to-end smoke', async () => {
   // 3. Progress for each type.
   await page.goto('app://maybepile/index.html#/library');
   await page.getByRole('link', { name: /Arrival/ }).click();
-  await page.getByRole('button', { name: 'Mark watched' }).click();
+  await page.getByRole('button', { name: 'Mark watched', exact: true }).click();
   await expect(page.getByText('Mark Completed', { exact: false })).toBeVisible(); // completion suggested, not forced
   await expect(page.locator('#item-status')).toHaveValue('planned');
   await page.getByRole('button', { name: 'Mark Completed' }).click();

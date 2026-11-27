@@ -57,7 +57,7 @@ export function Dialog({
       }
       if (e.key !== 'Tab') return;
       const items = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (el) => !el.closest('[hidden]'),
+        (el) => !el.closest('[hidden]') && tabbableRadio(el, node),
       );
       if (items.length === 0) {
         e.preventDefault();
@@ -184,4 +184,14 @@ export function ConfirmDialog({
       )}
     </Dialog>
   );
+}
+
+/** Browsers tab only to the checked radio of a group (or the first one when none is checked). */
+function tabbableRadio(el: HTMLElement, root: HTMLElement): boolean {
+  if (!(el instanceof HTMLInputElement) || el.type !== 'radio' || !el.name) return true;
+  const group = [...root.querySelectorAll<HTMLInputElement>('input[type="radio"]')].filter(
+    (r) => r.name === el.name && !r.disabled,
+  );
+  const checked = group.find((r) => r.checked);
+  return checked ? checked === el : group[0] === el;
 }

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type * as Http from 'node:http';
 import { _electron as electron, expect, test } from '@playwright/test';
+import { skipWelcomeAndUseFullMode } from './first-run';
 
 const root = process.cwd();
 
@@ -25,6 +26,7 @@ test('Expansion Pack 2: manual redirects in main, Pile page and item panels', as
   try {
     const page = await app.firstWindow();
     await page.waitForSelector('h1');
+    await skipWelcomeAndUseFullMode(page);
 
     // 1) Electron's own net.fetch rejects manual redirects (why the adapter exists).
     // 2) The app's real HTTP client: plain GET works in manual mode; a redirect reaches the

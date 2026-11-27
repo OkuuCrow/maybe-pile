@@ -9,10 +9,14 @@
  *   3 — Expansion Pack 2: anime fields inside item meta, plus the optional
  *       `pack2` section (src/main/services/pack2-portable.ts). Version 1/2
  *       files import unchanged.
+ *   4 — 2.1 (Notifications Pack + Simple Mode): optional `pack21` section
+ *       (src/main/services/pack21-portable.ts) and Recently-deleted items
+ *       included in `items`. Version 1–3 files import unchanged.
  * The schema here is the single source of truth for what an export contains;
  * imports are validated against it before anything is written.
  */
 import { Pack2SectionSchema } from './pack2-portable';
+import { Pack21SectionSchema } from './pack21-portable';
 import { z } from 'zod';
 import {
   CUSTOM_FIELD_TYPES,
@@ -33,7 +37,7 @@ import { LIST_COLORS, LIST_ICONS } from '../../shared/schemas';
 import { LayoutFileSchema } from '../../domain/layouts';
 
 export const EXPORT_FORMAT = 'maybepile-export';
-export const EXPORT_FORMAT_VERSION = 3;
+export const EXPORT_FORMAT_VERSION = 4;
 export const MAX_IMPORT_BYTES = 200 * 1024 * 1024;
 export const MAX_IMPORT_ITEMS = 100_000;
 
@@ -300,6 +304,8 @@ export const ExportEnvelopeSchema = z.object({
       .optional(),
     /* ---- formatVersion 3 ---- */
     pack2: Pack2SectionSchema.optional(),
+    /* ---- formatVersion 4 ---- */
+    pack21: Pack21SectionSchema.optional(),
   }),
 });
 export type ExportEnvelope = z.infer<typeof ExportEnvelopeSchema>;

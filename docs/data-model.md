@@ -120,3 +120,36 @@ Deliberate JSON columns: `merge_snapshots.snapshot` (an opaque restore blob) and
 ## Schema v6 (sync)
 
 `sync_state`, `sync_baseline` (`fields` is deliberately JSON: an opaque per-key snapshot), `sync_cursors` and `sync_conflicts` (local and remote values as JSON). See [sync.md](sync.md).
+
+## Schema v7 (2.1 — Notifications Pack + Simple Mode)
+
+| Table | Purpose |
+| --- | --- |
+| `reminders` | custom reminders: `item_id` (nullable), `message` ≤ 140, `kind` once/repeat, `anchor_at` (UTC), `anchor_date` + `local_time` (local anchor), `repeat_freq` daily/weekly/monthly/weekdays, `repeat_interval`, `repeat_weekdays` (bitmask), `next_fire_at` (display cache), `enabled` |
+| `app_events` | `last_backup`, `last_checkup`, `offline_queue_finished`, `last_backup_dir_check` instants (read by the reminder engine) |
+| `item_next_steps` | one “Next step” line per item + spoiler flag |
+| `checklists`, `checklist_items` | one checklist per item; ordered entries with `checked_at` |
+| `people` | names for loans and “Recommended by” (`forgotten` anonymizes) |
+| `loans` | lent/borrowed, dates, note |
+| `item_recommenders` | who recommended an item |
+| `saved_views` | name + validated JSON `LibraryQuery` (JSON exception, re-validated on read) |
+| `item_templates` | name + validated JSON body (JSON exception) |
+| `journal_entries` + `journal_fts` | dated entries; FTS rowid = `journal_entries.rid` |
+| `change_log` | Recent changes (field, old/new for non-sensitive fields, `undone_at`) |
+| `lookup_queue` | offline add queue (state, attempts, backoff, candidate matches JSON) |
+| `time_goals` | minutes per day/week, optional type/list/mood scope |
+| `item_flags` | `stale` flag from auto rules |
+| `artwork_palettes` | derived Ambient palette per artwork (regenerated if missing) |
+
+Columns: `episodes.skipped`, `run_episode_states.skipped`, `item_prefs.backdrop_style`.
+
+Settings keys added (validated, forward-compatible merge over defaults): `notifications`, `interface`,
+`backdrops`, `artworkSources`, `trash`, `changeLog`, `ratingPrompt`, `autoRules`, `themeSchedule`, `place`,
+`nextStep`, `window` (main-owned).
+
+### `notify-state.sqlite` (separate file, own migrations)
+
+`notification_log` (`library_id`, `category`, `dedupe_key` UNIQUE per library, `parent_key` for digest members,
+`item_id`, `kind`, `planned_for`, `claimed_at`, `delivered_at`, `outcome`, `reason`, `attempts`,
+`next_retry_at`, `delivery_mode`, `adapter`, `clicked_at`, `action`), `snoozes`, `mutes`, `helper_lease`,
+`meta` (last check per library), `state_migrations`.

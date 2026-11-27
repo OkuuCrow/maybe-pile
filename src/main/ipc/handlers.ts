@@ -4,7 +4,7 @@
  * through app-managed folders.
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { appError } from '../../shared/result';
 import type { AppInfo, FileOpResult } from '../../shared/types';
 import type { LayoutEntry } from '../../domain/layouts';
@@ -53,6 +53,7 @@ import { TRACKER_MAX_BYTES } from '../../domain/tracker-csv';
 import { defaultPersonal, emptyMeta } from '../../domain/metadata';
 import { localDate } from '../../domain/dates';
 import { timestampForFile } from '../services/db-manager';
+import { buildHandlers21, type Deps21 } from './handlers-21';
 
 export interface FileFilter {
   name: string;
@@ -70,7 +71,7 @@ export interface Platform {
   capturePng?(rect: { x: number; y: number; width: number; height: number }): Promise<Uint8Array | null>;
 }
 
-export interface HandlerDeps {
+export interface HandlerDeps extends Deps21 {
   ctx: ServiceContext;
   library: LibraryService;
   progress: ProgressService;
@@ -216,13 +217,20 @@ export function buildHandlers(d: HandlerDeps): Handlers {
     'items:query': (q) => d.library.query(q),
     'items:get': ({ id }) => d.library.get(id),
     'items:create': (input) => d.library.create(input),
-    'items:update': (input) => d.library.update(input),
-    'items:setStatus': (input) => d.library.setStatus(input),
-    'items:acceptSuggestion': ({ id, suggestion }) => d.library.acceptSuggestion(id, suggestion),
-    'items:setRating': ({ id, rating }) => d.library.setRating(id, rating),
-    'items:delete': ({ ids }) => ({ count: d.library.softDelete(ids) }),
-    'items:undoDelete': ({ ids }) => ({ count: d.library.undoDelete(ids) }),
-    'items:bulk': (input) => d.library.bulk(input),
+    'items:update': (input) => d.pack21.history.logged([input.id], 'user', () => d.library.update(input)),
+    'items:setStatus': (input) =>
+      d.pack21.history.logged([input.id], 'user', () => d.library.setStatus(input)),
+    'items:acceptSuggestion': ({ id, suggestion }) =>
+      d.pack21.history.logged([id], 'user', () => d.library.acceptSuggestion(id, suggestion)),
+    'items:setRating': ({ id, rating }) =>
+      d.pack21.history.logged([id], 'user', () => d.library.setRating(id, rating)),
+    'items:delete': ({ ids }) => ({
+      count: d.pack21.history.logged(ids, 'trash', () => d.library.softDelete(ids)),
+    }),
+    'items:undoDelete': ({ ids }) => ({
+      count: d.pack21.history.logged(ids, 'restore', () => d.library.undoDelete(ids)),
+    }),
+    'items:bulk': (input) => d.pack21.history.logged(input.ids, 'bulk', () => d.library.bulk(input)),
     'items:checkDuplicates': (input) => d.library.checkDuplicates(input),
     'items:dashboard': () => d.library.dashboard(),
     'items:tags': () => d.catalog.tags(),
@@ -695,7 +703,11 @@ export function buildHandlers(d: HandlerDeps): Handlers {
         filters: [BACKUP_FILTER],
       });
       if (!path) return null;
-      return d.backup.createBackup(path, { overwrite: existsSync(path) });
+      const r = d.backup.createBackup(path, { overwrite: existsSync(path) });
+      // 2.1: remember the last successful backup (backup reminder) and re-check the destination drive.
+      d.pack21.maintenance.recordBackup();
+      d.pack21.maintenance.checkBackupDestination(dirname(path));
+      return r;
     },
     'data:backupList': () => d.backup.listInternal(),
     'data:restoreInternalPreview': ({ label }) => {
@@ -703,5 +715,6 @@ export function buildHandlers(d: HandlerDeps): Handlers {
       if (!existsSync(p)) throw appError('NOT_FOUND', 'That snapshot no longer exists.');
       return d.backup.previewRestore(p);
     },
+    ...buildHandlers21(d),
   };
 }

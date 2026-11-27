@@ -73,3 +73,19 @@ A full manual keyboard-only and screen-reader pass by a person was **not** perfo
 - **Session timer:** a labelled group. The readout isn't a live region (so it doesn't announce every second); the header link states the running or paused status and duration.
 - **Pile page:** every card is a labelled section; tables have captions and row headers.
 - **Tests:** `tests/ui/pack2.test.tsx` runs axe (WCAG 2.2 A/AA plus best practices, with contrast checked separately) on the Pile page, the item page panels, the Artwork Picker, Spoiler Shield, settings and the heatmap. All pass.
+
+## 2.1
+
+- New screens (Simple Home, Library, item page, Add, Settings, Reminders card, confirmation dialog, first run)
+  are checked with axe-core in `tests/ui/simple.test.tsx`; existing suites still pass.
+- Toggles are `role="switch"` buttons with visible On/Off text. Mode pickers are radio groups with labels.
+- Undo toasts use the polite live region with a keyboard-reachable Undo button; status changes in
+  Notifications, check-up and triage are announced through `role="status"` regions.
+- Omnibox: ARIA 1.2 combobox + listbox; arrow keys and Enter; Esc clears.
+- Cover wall: `role="grid"` with roving tabindex (arrows, Home/End, Enter), accessible names per cover.
+- Triage: single-key actions with visible key hints and `aria-keyshortcuts`; each action announced.
+- The dialog focus trap now treats radio groups like browsers do (only the checked radio is a Tab stop).
+- Backdrops keep text at WCAG AA via a computed scrim; “Reduce effects / high contrast”, `prefers-contrast`
+  and `prefers-reduced-transparency` turn them off; nothing animates.
+- Text options: larger text, line/letter spacing, dyslexia-friendly font preference, “more space” density.
+- Not done: manual screen-reader passes (NVDA, Orca) on the new screens.

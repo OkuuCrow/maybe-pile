@@ -73,6 +73,8 @@ export interface EpisodeView {
   watched: boolean;
   watchedAt: string | null;
   source: 'provider' | 'user';
+  /** 2.1 §16.8: skipped (counts toward "caught up", never as watched or watch time). */
+  skipped?: boolean;
 }
 
 export interface SeasonView {
@@ -204,6 +206,13 @@ export interface ItemSummary {
   thumbUrl: string | null;
   progressPercent: number | null;
   progressLabel: string;
+  /** 2.1 §16.5: optional one-line "Next step". */
+  nextStep?: string | null;
+  nextStepSpoiler?: boolean;
+  /** 2.1 §14.9: checklist progress ("3 of 5"), null when the item has no checklist. */
+  checklist?: { done: number; total: number } | null;
+  /** 2.1 §16.6: added offline; online details still pending review. */
+  waitingForDetails?: boolean;
 }
 
 export interface LibraryPage {
@@ -469,6 +478,10 @@ export interface AppInfo {
   recoveryNotice: string | null;
   backupLocationLabel: string;
   readOnly: boolean;
+  /** 2.1: one-off notices (e.g. background reminders repaired after the app moved). */
+  extraNotices?: string[];
+  /** 2.1: active library name when more than one library exists. */
+  libraryName?: string | null;
 }
 
 /* ---------- feature pack (1.2) ---------- */

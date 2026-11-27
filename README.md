@@ -17,6 +17,9 @@ Maybe Pile is a local-first desktop app for the movies, TV shows, anime, video g
 - **Anime** as its own type: romaji/English/native titles, format, airing status, season, studios, sub/dub preference, adult content hidden by default, "All anime sources" search with de-duplication, relation suggestions, documented streaming links, and **MyAnimeList XML import** with undo.
 - An **Artwork Picker** for cover, banner, logo, icon and background, gathering candidates from several sources (TMDB, fanart.tv, SteamGridDB and the item's own source). Your choices are never replaced automatically, and every image passes strict safety checks.
 - **Pile Time** (how long your pile would take, with sources and confidence), **Moods**, **Runs** (rewatch/replay history), **Series** with "Next in series", **Spoiler Shield**, **Pile Value** (per currency, no conversion), a **session timer** that survives restarts, **ownership & Leaving Soon**, offline **explainable recommendations**, a local **share card**, a **completion heatmap** (with table view), **duplicate merge** with undo, and a **sync folder** for keeping computers in step without a server.
+- **Simple Mode** (new in 2.1, the default for new installs): Home, Library and Settings, a two-step Add, one-tap progress with Undo, a find-or-add omnibox, and a 3-step welcome. **Full mode** keeps every feature; switch any time.
+- **Reminders that work even when the app is closed** (Windows and Linux, all off by default): keep-going nudges, Up Next digests, releases, leaving-soon dates, your own once/repeating reminders, goals, backups and more — with quiet hours, daily caps, privacy levels, snooze/mute, and three delivery modes (while open, tray, or a per-user scheduled check). Nothing is installed until you confirm exactly what will be created.
+- **Recently deleted** (30 days), **Recent changes** with per-change undo, **Library check-up**, **Triage**, **Bulk edit** with preview, a **Next step** line, **checklists**, **loans** and **Recommended by**, a **journal**, **time goals**, a **cover wall**, **saved views**, **item templates**, **paste a list** to import, **offline add queue**, **automatic status rules**, **skipped episodes**, a script-free **share page**, **backdrops** with guaranteed readable text, key-free TVmaze and Wikimedia Commons artwork, and **multiple libraries**.
 - **Backups** (`.mpbackup`), **JSON/CSV export and import** with preview and conflict handling, and safe moves between Windows, macOS and Linux.
 
 ## Requirements
@@ -65,7 +68,7 @@ See [docs/packaging.md](docs/packaging.md) for prerequisites, signing and notari
 
 ## Using Maybe Pile
 
-1. **Add something:** click **Add item** (or press `N`). Search an online source, pick the right result, review the preview, then **Import**. Or switch to **Enter manually**.
+1. **Add something:** click **Add item** (or press `N`), type a title, pick the type, then choose a search result or **Add without searching** — it lands as Planned. Offline? **Add now, look up details later**. Full mode also offers advanced search with a preview, **Enter manually**, **From template** and **Paste a list**. New installs start in **Simple Mode**; Settings → Interface switches to Full.
 2. **Track it:** on the item page, log a viewing, tick episodes ("Up to here" marks earlier ones too), record hours, milestones, pages or percent. Maybe Pile *suggests* status changes (for example "Mark Completed?") but never forces them.
 3. **Find things:** in **Library**, type to search titles, creators, notes and tags. Open **Filters** for type, status, tags, rating and date added. Remove filters with the chips or **Clear all filters**.
 4. **Make it yours:** Settings → **Appearance** (duplicate a built-in theme and edit its colours, with live preview and a contrast check) and **Layout** (reorder and hide dashboard and library components).
@@ -75,6 +78,8 @@ See [docs/packaging.md](docs/packaging.md) for prerequisites, signing and notari
 8. **Import your Steam library:** get your own key at steamcommunity.com/dev/apikey, then **Import → Game libraries → Add Steam account**. Make your Steam *Game details* public, load the library, select unplayed games and import them. See [docs/steam-import.md](docs/steam-import.md).
 9. **Bring other trackers:** **Import → Other trackers** for Goodreads, Letterboxd or any CSV. Undo any import under **Import history & undo**.
 10. **Organize and reflect:** create **Lists**, triage **Pile Health**, set **Goals**, check **Stats** and **Upcoming releases**. Press **Ctrl/⌘+K** to jump anywhere.
+
+11. **Reminders:** Settings → Reminders (Simple) or Notifications (Full). Turn them on, choose how often, quiet hours, and whether they should work when the app is closed. See [docs/notifications.md](docs/notifications.md).
 
 Press `?` at any time for keyboard shortcuts.
 
@@ -98,7 +103,10 @@ Press `?` at any time for keyboard shortcuts.
 | [anime.md](docs/anime.md) | Anime fields, sources, episode edge cases, MAL XML import |
 | [artwork.md](docs/artwork.md) | Artwork Picker, slots, automatic picks, storage and image safety |
 | [sync.md](docs/sync.md) | Sync folder: what syncs, how conflicts work, safety |
-| [features/](docs/features/) | One page each: Pick for Me, Up Next, Pile Health, Lists, Stats, Release Radar, Tracker Imports, Quick Capture & palette, Goals, Pile Time, Moods, Runs, Series, Spoiler Shield, Pile Value, Sessions, Ownership, Recommendations, Share card, Heatmap, Duplicate merge |
+| [features/](docs/features/) | One page each: Pick for Me, Up Next, Pile Health, Lists, Stats, Release Radar, Tracker Imports, Quick Capture & palette, Goals, Pile Time, Moods, Runs, Series, Spoiler Shield, Pile Value, Sessions, Ownership, Recommendations, Share card, Heatmap, Duplicate merge; 2.1: time goals, cover wall, quick rating, saved views, templates, paste list, backup check, share page, checklists, loans, trash & changes, check-up, triage, bulk edit, next step, offline queue, auto rules, skipped episodes, recommended by, journal, backdrops, QoL |
+| [notifications.md](docs/notifications.md) | Reminder modes, categories, quiet hours, privacy, helper, per-OS behavior, what was verified |
+| [notifications-troubleshooting.md](docs/notifications-troubleshooting.md) | “I don't get notifications”, manual checks, full removal |
+| [simple-mode.md](docs/simple-mode.md) | Core vs advanced, interaction rules, click budgets, self-review |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes and migration notes |
 
 ## AI assistance disclaimer

@@ -36,10 +36,24 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "update": "availability:update",
     "updateService": "availability:updateService",
   },
+  "backdrop": {
+    "clearCache": "backdrop:clearCache",
+    "enforceCap": "backdrop:enforceCap",
+    "forItem": "backdrop:forItem",
+    "setItemStyle": "backdrop:setItemStyle",
+    "storage": "backdrop:storage",
+  },
+  "backupCheck": {
+    "current": "backupCheck:current",
+  },
   "batches": {
     "list": "batches:list",
     "undo": "batches:undo",
     "undoPreview": "batches:undoPreview",
+  },
+  "bulkEdit": {
+    "apply": "bulkEdit:apply",
+    "preview": "bulkEdit:preview",
   },
   "catalog": {
     "customFields": "customFields:list",
@@ -50,6 +64,17 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "series": "series:list",
     "setSeriesMembership": "series:setMembership",
   },
+  "changes": {
+    "clear": "changes:clear",
+    "list": "changes:list",
+    "undo": "changes:undo",
+    "undoBatch": "changes:undoBatch",
+  },
+  "checkup": {
+    "exportReport": "checkup:exportReport",
+    "fix": "checkup:fix",
+    "run": "checkup:run",
+  },
   "data": {
     "backupCreate": "data:backupCreate",
     "backupList": "data:backupList",
@@ -59,6 +84,27 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "importCancel": "data:importCancel",
     "importPreview": "data:importPreview",
     "restoreInternalPreview": "data:restoreInternalPreview",
+  },
+  "extras": {
+    "checklist": "extras:checklist",
+    "deleteJournal": "extras:deleteJournal",
+    "deleteLoan": "extras:deleteLoan",
+    "forItem": "extras:forItem",
+    "forgetPerson": "extras:forgetPerson",
+    "journal": "extras:journal",
+    "loans": "extras:loans",
+    "mergePeople": "extras:mergePeople",
+    "people": "extras:people",
+    "peopleNames": "extras:peopleNames",
+    "ratingPrompt": "extras:ratingPrompt",
+    "recommendedBy": "extras:recommendedBy",
+    "renamePerson": "extras:renamePerson",
+    "saveJournal": "extras:saveJournal",
+    "saveLoan": "extras:saveLoan",
+    "searchJournal": "extras:searchJournal",
+    "setNextStep": "extras:setNextStep",
+    "setRecommender": "extras:setRecommender",
+    "skipEpisodes": "extras:skipEpisodes",
   },
   "franchises": {
     "create": "franchises:create",
@@ -121,6 +167,14 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "reset": "layouts:reset",
     "set": "layouts:set",
   },
+  "libraries": {
+    "create": "libraries:create",
+    "duplicate": "libraries:duplicate",
+    "list": "libraries:list",
+    "remove": "libraries:delete",
+    "rename": "libraries:rename",
+    "switchTo": "libraries:switch",
+  },
   "lists": {
     "get": "lists:get",
     "list": "lists:list",
@@ -147,6 +201,27 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "reorder": "moods:reorder",
     "setForItem": "moods:setForItem",
     "update": "moods:update",
+  },
+  "notify": {
+    "apply": "notify:apply",
+    "clearHistory": "notify:clearHistory",
+    "history": "notify:history",
+    "itemControls": "notify:itemControls",
+    "pause": "notify:pause",
+    "plan": "notify:plan",
+    "preview": "notify:preview",
+    "removeBackground": "notify:removeBackground",
+    "repair": "notify:repair",
+    "runNow": "notify:runNow",
+    "setItemMute": "notify:setItemMute",
+    "snoozeItem": "notify:snoozeItem",
+    "status": "notify:status",
+    "test": "notify:test",
+  },
+  "paste": {
+    "apply": "paste:apply",
+    "match": "paste:match",
+    "parse": "paste:parse",
   },
   "pick": {
     "clearSkips": "pick:clearSkips",
@@ -189,6 +264,19 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "setKey": "providers:setKey",
     "watch": "providers:watch",
   },
+  "queue": {
+    "add": "queue:add",
+    "apply": "queue:apply",
+    "cancel": "queue:cancel",
+    "list": "queue:list",
+    "process": "queue:process",
+    "retry": "queue:retry",
+  },
+  "quick": {
+    "act": "quick:act",
+    "omnibox": "quick:omnibox",
+    "undo": "quick:undo",
+  },
   "radar": {
     "exportIcs": "radar:exportIcs",
     "refreshApply": "radar:refreshApply",
@@ -199,6 +287,16 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "clearFeedback": "recs:clearFeedback",
     "feedback": "recs:feedback",
     "list": "recs:list",
+  },
+  "reminders": {
+    "list": "reminders:list",
+    "remove": "reminders:delete",
+    "save": "reminders:save",
+    "setEnabled": "reminders:setEnabled",
+  },
+  "rules": {
+    "preview": "rules:preview",
+    "run": "rules:run",
   },
   "sessions": {
     "edit": "sessions:edit",
@@ -217,6 +315,10 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
   },
   "share": {
     "saveCard": "share:saveCard",
+  },
+  "sharePage": {
+    "preview": "sharePage:preview",
+    "save": "sharePage:save",
   },
   "sources": {
     "applyPlaytime": "sources:applyPlaytime",
@@ -252,6 +354,15 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "setDeviceName": "sync:setDeviceName",
     "status": "sync:status",
   },
+  "templates": {
+    "duplicate": "templates:duplicate",
+    "exportFile": "templates:export",
+    "importFile": "templates:import",
+    "list": "templates:list",
+    "remove": "templates:delete",
+    "save": "templates:save",
+    "starters": "templates:starters",
+  },
   "themes": {
     "active": "themes:active",
     "duplicate": "themes:duplicate",
@@ -263,6 +374,12 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "reset": "themes:reset",
     "save": "themes:save",
   },
+  "timeGoals": {
+    "archive": "timeGoals:archive",
+    "list": "timeGoals:list",
+    "remove": "timeGoals:delete",
+    "save": "timeGoals:save",
+  },
   "tracker": {
     "apply": "tracker:apply",
     "deleteProfile": "tracker:deleteProfile",
@@ -271,12 +388,38 @@ exports[`preload API surface > matches the documented snapshot (namespaces → m
     "remap": "tracker:remap",
     "saveProfile": "tracker:saveProfile",
   },
+  "trash": {
+    "empty": "trash:empty",
+    "list": "trash:list",
+    "purge": "trash:purge",
+    "restore": "trash:restore",
+  },
+  "triage": {
+    "act": "triage:act",
+    "queue": "triage:queue",
+    "undo": "triage:undo",
+  },
   "value": {
     "add": "value:add",
     "list": "value:list",
     "remove": "value:delete",
     "summary": "value:summary",
     "update": "value:update",
+  },
+  "views": {
+    "duplicate": "views:duplicate",
+    "exportFile": "views:export",
+    "importFile": "views:import",
+    "list": "views:list",
+    "move": "views:move",
+    "remove": "views:delete",
+    "save": "views:save",
+    "starters": "views:starters",
+  },
+  "wall": {
+    "items": "wall:items",
+    "savePng": "wall:savePng",
+    "years": "wall:years",
   },
 }
 `;

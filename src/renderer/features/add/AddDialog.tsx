@@ -20,16 +20,28 @@ import { Cover, ErrorBox, Loading, Notice, STATUS_OPTIONS } from '../../componen
 import { ListInput, SelectField } from '../../components/Fields';
 import { ItemForm, toSeasonInputs, type ItemFormValue } from '../item/ItemForm';
 import { ExternalLink } from '../item/LinksPanel';
+import { QuickAdd } from './QuickAdd';
+import { FromTemplate, PasteList } from './AddExtras';
 
-type Tab = 'search' | 'manual';
+type Tab = 'quick' | 'search' | 'manual' | 'paste' | 'template';
+const TAB_LABEL: Record<Tab, string> = {
+  quick: 'Add',
+  search: 'Search online (advanced)',
+  manual: 'Enter manually',
+  paste: 'Paste a list',
+  template: 'From template',
+};
 
 export function AddDialog({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<Tab>('search');
+  const app = useApp();
+  const tabs: Tab[] =
+    app.level === 'simple' ? ['quick', 'paste'] : ['quick', 'search', 'manual', 'paste', 'template'];
+  const [tab, setTab] = useState<Tab>('quick');
   const tabsId = useId();
   return (
     <Dialog title="Add an item" onClose={onClose} size="large">
       <div role="tablist" aria-label="How to add" className="tabs">
-        {(['search', 'manual'] as const).map((t) => (
+        {tabs.map((t, i) => (
           <button
             key={t}
             type="button"
@@ -42,22 +54,23 @@ export function AddDialog({ onClose }: { onClose: () => void }) {
             onClick={() => setTab(t)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                const next = t === 'search' ? 'manual' : 'search';
+                const next =
+                  tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length] ?? 'quick';
                 setTab(next);
                 document.getElementById(`${tabsId}-${next}`)?.focus();
               }
             }}
           >
-            {t === 'search' ? 'Search online' : 'Enter manually'}
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
       <div role="tabpanel" id={`${tabsId}-${tab}-panel`} aria-labelledby={`${tabsId}-${tab}`}>
-        {tab === 'search' ? (
-          <SearchTab onDone={onClose} onManual={() => setTab('manual')} />
-        ) : (
-          <ManualTab onDone={onClose} />
-        )}
+        {tab === 'quick' && <QuickAdd onDone={onClose} initialTitle={app.addTitle} />}
+        {tab === 'search' && <SearchTab onDone={onClose} onManual={() => setTab('manual')} />}
+        {tab === 'manual' && <ManualTab onDone={onClose} />}
+        {tab === 'paste' && <PasteList onDone={onClose} />}
+        {tab === 'template' && <FromTemplate onDone={onClose} />}
       </div>
     </Dialog>
   );

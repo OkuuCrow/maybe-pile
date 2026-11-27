@@ -29,6 +29,21 @@ import { COMPONENT_LABELS, DEFAULT_LAYOUTS, type DashboardComponentId } from '..
 import { errorOf } from './api';
 import type { ThemeSummary } from '../../shared/types';
 import type { MenuCommand } from '../../shared/ipc-channels';
+import { isShown, labelFor } from '../../shared/feature-registry';
+import { SimpleHome } from '../features/simple/SimpleHome';
+import { Omnibox } from '../features/simple/Omnibox';
+import {
+  FirstRun,
+  RatingPromptHost,
+  SimpleOfferBanner,
+  useAppearanceAttributes,
+  useRestorePlace,
+  useThemeSchedule,
+} from '../features/simple/ShellExtras';
+import { ChangesPage, TrashPage } from '../features/history/HistoryPages';
+import { WallPage } from '../features/wall/WallPage';
+import { TriagePage } from '../features/triage/TriagePage';
+import { PeoplePage } from '../features/people/PeoplePage';
 
 export function App() {
   return (
@@ -45,6 +60,11 @@ function Shell() {
   const toast = useToast();
   const mainRef = useRef<HTMLElement>(null);
   const pendingG = useRef<number | null>(null);
+  const [omniOpen, setOmniOpen] = useState(false);
+  useAppearanceAttributes();
+  useThemeSchedule();
+  useRestorePlace();
+  const simple = app.level === 'simple';
 
   // Move focus to main content on route changes so keyboard/screen-reader users land in the new view.
   const routeKey = app.route.name === 'item' ? `item:${app.route.id}` : app.route.name;
@@ -87,7 +107,9 @@ function Shell() {
         app.navigate({ name: 'settings', tab: 'about' });
         break;
       case 'command-palette':
-        app.setPaletteOpen(true);
+        // Simple Mode: the omnibox (find or add). Full mode: the command palette (also finds items).
+        if (app.level === 'simple') setOmniOpen(true);
+        else app.setPaletteOpen(true);
         break;
       case 'quick-capture':
         app.setCaptureOpen(true);
@@ -101,6 +123,30 @@ function Shell() {
   runRef.current = runCommand;
 
   useEffect(() => getApi().events.onMenuCommand((c) => runRef.current(c)), []);
+  // 2.1: in-app reminder banners (when the OS could not show one) and notification clicks.
+  const navigateRef = useRef(app.navigate);
+  navigateRef.current = app.navigate;
+  useEffect(() => {
+    const ev = getApi().events;
+    const offA = ev.onInAppNotification?.((n) =>
+      toast.show(
+        {
+          kind: 'info',
+          message: n.title,
+          detail: n.body,
+          action: n.itemId
+            ? { label: 'Open', run: () => n.itemId && navigateRef.current({ name: 'item', id: n.itemId }) }
+            : undefined,
+        },
+        12_000,
+      ),
+    );
+    const offB = ev.onOpenItem?.((id) => navigateRef.current({ name: 'item', id }));
+    return () => {
+      offA?.();
+      offB?.();
+    };
+  }, [toast]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -175,6 +221,7 @@ function Shell() {
     info?.dataLocationNotice ? { k: 'loc', kind: 'info' as const, text: info.dataLocationNotice } : null,
     app.theme?.notice ? { k: 'theme', kind: 'warning' as const, text: app.theme.notice } : null,
     ...(app.layouts?.notices ?? []).map((n, i) => ({ k: `lay${i}`, kind: 'info' as const, text: n })),
+    ...(info?.extraNotices ?? []).map((n, i) => ({ k: `x${i}`, kind: 'info' as const, text: n })),
   ].filter((n): n is NonNullable<typeof n> => n !== null);
 
   const navItem = (
@@ -220,29 +267,62 @@ function Shell() {
         </div>
         <nav aria-label={S.nav.label}>
           <ul className="nav-list">
-            {navItem('dashboard', S.nav.dashboard, <IconHome />)}
+            {navItem('dashboard', labelFor('nav.home', app.level), <IconHome />)}
             {navItem('library', S.nav.library, <IconStack />)}
-            {navItem('pile', 'Pile', <IconGrid />)}
-            {navItem('lists', 'Lists', <IconList />)}
-            {navItem('stats', 'Stats', <IconGrid />)}
-            {navItem('import', 'Import', <IconPlus />)}
+            {!simple && navItem('pile', 'Pile', <IconGrid />)}
             {navItem('settings', S.nav.settings, <IconGear />)}
+            {!simple && (
+              <li>
+                <details className="nav-more">
+                  <summary className="nav-link">More</summary>
+                  <ul className="nav-more-list">
+                    {(['lists', 'stats', 'import'] as const).map((n) =>
+                      navItem(
+                        n,
+                        n === 'lists' ? 'Lists' : n === 'stats' ? 'Stats' : 'Import',
+                        n === 'lists' ? <IconList /> : n === 'stats' ? <IconGrid /> : <IconPlus />,
+                      ),
+                    )}
+                    {(
+                      [
+                        ['nav.upcoming', '#/upcoming'],
+                        ['nav.pick', '#/pick'],
+                        ['nav.goals', '#/goals'],
+                        ['nav.wall', '#/wall'],
+                        ['nav.triage', '#/triage'],
+                        ['nav.people', '#/people'],
+                        ['nav.changes', '#/changes'],
+                        ['nav.trash', '#/trash'],
+                      ] as const
+                    )
+                      .filter(([id]) => isShown(id, app.level))
+                      .map(([id, href]) => (
+                        <li key={id}>
+                          <a className="nav-link" href={href}>
+                            <span>{labelFor(id, app.level)}</span>
+                          </a>
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              </li>
+            )}
           </ul>
         </nav>
         <HeaderTimer />
         <button
           type="button"
           className="button"
-          onClick={() => app.setPaletteOpen(true)}
+          onClick={() => (simple ? setOmniOpen(true) : app.setPaletteOpen(true))}
           aria-keyshortcuts="Control+K Meta+K"
         >
           <IconSearch />
-          <span>Search &amp; commands</span>
+          <span>{simple ? 'Search' : 'Search & commands'}</span>
         </button>
         <button
           type="button"
           className="button button-primary"
-          onClick={app.openAdd}
+          onClick={() => app.openAdd()}
           disabled={info?.readOnly}
         >
           <IconPlus />
@@ -257,7 +337,7 @@ function Shell() {
                 key={n.k}
                 kind={n.kind}
                 onDismiss={
-                  n.k === 'up' || n.k === 'rec'
+                  n.k === 'up' || n.k === 'rec' || n.k.startsWith('x')
                     ? () => {
                         void call(getApi().app.acknowledgeNotices()).then(app.reloadInfo);
                       }
@@ -269,7 +349,13 @@ function Shell() {
             ))}
           </div>
         )}
-        {app.route.name === 'dashboard' && <Dashboard />}
+        <SimpleOfferBanner />
+        {app.route.name === 'dashboard' && (simple ? <SimpleHome /> : <Dashboard />)}
+        {app.route.name === 'trash' && <TrashPage />}
+        {app.route.name === 'changes' && <ChangesPage />}
+        {app.route.name === 'wall' && <WallPage />}
+        {app.route.name === 'triage' && <TriagePage />}
+        {app.route.name === 'people' && <PeoplePage />}
         {app.route.name === 'library' && <Library />}
         {app.route.name === 'item' && <ItemPage id={app.route.id} key={app.route.id} />}
         {app.route.name === 'settings' && <Settings tab={app.route.tab} />}
@@ -284,6 +370,13 @@ function Shell() {
         {app.route.name === 'import' && <ImportPage tab={app.route.tab} />}
       </main>
       {app.addOpen && <AddDialog onClose={app.closeAdd} />}
+      {omniOpen && (
+        <Dialog title="Find or add" onClose={() => setOmniOpen(false)} size="medium">
+          <Omnibox onDone={() => setOmniOpen(false)} />
+        </Dialog>
+      )}
+      <FirstRun />
+      <RatingPromptHost />
       {app.paletteOpen && <PaletteHost />}
       {app.captureOpen && !info?.readOnly && <QuickCapture onClose={() => app.setCaptureOpen(false)} />}
       {app.shortcutsOpen && (

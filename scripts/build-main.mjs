@@ -16,6 +16,13 @@ const common = {
 
 const targets = [
   { ...common, entryPoints: ['src/main/main.ts'], outfile: 'dist/main/main.cjs' },
+  // Headless reminder helper (Linux scheduled mode runs it with ELECTRON_RUN_AS_NODE=1; no Electron APIs).
+  {
+    ...common,
+    entryPoints: ['src/helper/reminder-check.ts'],
+    outfile: 'dist/helper/reminder-check.cjs',
+    sourcemap: false,
+  },
   // Sandboxed preloads may only require('electron') — no other Node modules.
   {
     ...common,

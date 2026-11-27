@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Status } from '../../../shared/enums';
 import type { ItemDetail, MutationOutcome, StatusSuggestion } from '../../../shared/types';
 import type { MetadataField } from '../../../shared/schemas';
@@ -27,6 +27,8 @@ import { HistoryPanel } from './HistoryPanel';
 import { RefreshDialog } from './RefreshDialog';
 import { LinksPanel } from './LinksPanel';
 import { SeriesPanel } from './SeriesPanel';
+import { ItemBackdrop, ItemQuickPanel, MoreDetails, Pack21Panels } from './ItemPanels21';
+import { emitCompleted } from '../simple/QuickActions';
 import { AddToListDialog } from '../lists/ListsPage';
 import { SnoozeDialog } from '../health/HealthPage';
 import {
@@ -47,6 +49,7 @@ import {
 import type { ItemPrefsView } from '../../../shared/types';
 
 export function ItemPage({ id }: { id: string }) {
+  useCompletionWatcher(id);
   const app = useApp();
   const toast = useToast();
   const q = useAsync(() => call(getApi().items.get({ id })), [id, app.dataVersion]);
@@ -210,6 +213,7 @@ export function ItemPage({ id }: { id: string }) {
   const hasSource = item.sources.length > 0;
   return (
     <div className="page item-page">
+      <ItemBackdrop item={item} artHidden={false} />
       <nav aria-label="Breadcrumb" className="breadcrumb">
         <a href="#/library">{S.nav.library}</a> <span aria-hidden="true">›</span>{' '}
         <span aria-current="page">{item.meta.title}</span>
@@ -480,14 +484,17 @@ export function ItemPage({ id }: { id: string }) {
         )}
         <div className="item-columns">
           <div className="item-main">
+            <ItemQuickPanel item={item} readOnly={readOnly} />
             <section className="card" aria-labelledby="sec-progress">
               <h2 id="sec-progress">{S.item.progress}</h2>
               <ProgressPanel item={item} readOnly={readOnly} onOutcome={applyOutcome} />
             </section>
-            <section className="card" aria-labelledby="sec-history">
-              <h2 id="sec-history">{S.item.history}</h2>
-              <HistoryPanel item={item} readOnly={readOnly} tick={historyTick} onOutcome={applyOutcome} />
-            </section>
+            <MoreDetails label="History">
+              <section className="card" aria-labelledby="sec-history">
+                <h2 id="sec-history">{S.item.history}</h2>
+                <HistoryPanel item={item} readOnly={readOnly} tick={historyTick} onOutcome={applyOutcome} />
+              </section>
+            </MoreDetails>
             <section className="card" aria-labelledby="sec-notes">
               <h2 id="sec-notes">{S.item.notes}</h2>
               {item.personal.notes ? (
@@ -523,68 +530,77 @@ export function ItemPage({ id }: { id: string }) {
                 </dl>
               )}
             </section>
-            <section className="card" aria-labelledby="sec-time">
-              <h2 id="sec-time">Time</h2>
-              <PileTimePanel item={item} readOnly={readOnly} />
-              <h3>Sessions</h3>
-              <SessionsPanel item={item} readOnly={readOnly} />
-            </section>
-            <section className="card" aria-labelledby="sec-runs">
-              <h2 id="sec-runs">Runs</h2>
-              <RunsPanel item={item} />
-            </section>
-            <section className="card" aria-labelledby="sec-series2">
-              <h2 id="sec-series2">Series &amp; related</h2>
-              <RelationsPanel item={item} readOnly={readOnly} />
-            </section>
+            <MoreDetails>
+              <Pack21Panels item={item} readOnly={readOnly} />
+              <section className="card" aria-labelledby="sec-time">
+                <h2 id="sec-time">Time</h2>
+                <PileTimePanel item={item} readOnly={readOnly} />
+                <h3>Sessions</h3>
+                <SessionsPanel item={item} readOnly={readOnly} />
+              </section>
+              <section className="card" aria-labelledby="sec-runs">
+                <h2 id="sec-runs">Runs</h2>
+                <RunsPanel item={item} />
+              </section>
+              <section className="card" aria-labelledby="sec-series2">
+                <h2 id="sec-series2">Series &amp; related</h2>
+                <RelationsPanel item={item} readOnly={readOnly} />
+              </section>
+            </MoreDetails>
           </div>
           <div className="item-side">
-            <section className="card" aria-labelledby="sec-moods">
-              <h2 id="sec-moods">Moods</h2>
-              <MoodsPanel item={item} readOnly={readOnly} />
-            </section>
-            <section className="card" aria-labelledby="sec-details">
-              <h2 id="sec-details">{S.item.details}</h2>
-              <DetailsList item={item} />
-            </section>
-            <section className="card" aria-labelledby="sec-links">
-              <h2 id="sec-links">{S.item.links}</h2>
-              <LinksPanel item={item} />
-            </section>
-            {item.type === 'book' && (
-              <section className="card" aria-labelledby="sec-series">
-                <h2 id="sec-series">Series</h2>
-                <SeriesPanel item={item} readOnly={readOnly} onChange={() => (q.reload(), app.bumpData())} />
+            <MoreDetails label="Details, artwork and sources">
+              <section className="card" aria-labelledby="sec-moods">
+                <h2 id="sec-moods">Moods</h2>
+                <MoodsPanel item={item} readOnly={readOnly} />
               </section>
-            )}
-            {item.type === 'anime' && (
-              <section className="card" aria-labelledby="sec-streaming">
-                <h2 id="sec-streaming">Where to watch (from data sources)</h2>
-                <StreamingPanel item={item} />
+              <section className="card" aria-labelledby="sec-details">
+                <h2 id="sec-details">{S.item.details}</h2>
+                <DetailsList item={item} />
               </section>
-            )}
-            <section className="card" aria-labelledby="sec-own">
-              <h2 id="sec-own">Ownership &amp; access</h2>
-              <AvailabilityPanel item={item} readOnly={readOnly} />
-              <h3>Purchases</h3>
-              <ValuePanel item={item} readOnly={readOnly} />
-            </section>
-            <section className="card" aria-labelledby="sec-art">
-              <h2 id="sec-art">Artwork</h2>
-              <ArtworkSlotsPanel
-                item={item}
-                readOnly={readOnly}
-                onChanged={() => (q.reload(), app.bumpData())}
-              />
-            </section>
-            <section className="card" aria-labelledby="sec-prefs">
-              <h2 id="sec-prefs">Preferences</h2>
-              <PrefsPanel item={item} readOnly={readOnly} prefs={prefs} onChange={setPrefsOverride} />
-            </section>
-            <section className="card" aria-labelledby="sec-source">
-              <h2 id="sec-source">{S.item.source}</h2>
-              <SourcePanel item={item} />
-            </section>
+              <section className="card" aria-labelledby="sec-links">
+                <h2 id="sec-links">{S.item.links}</h2>
+                <LinksPanel item={item} />
+              </section>
+              {item.type === 'book' && (
+                <section className="card" aria-labelledby="sec-series">
+                  <h2 id="sec-series">Series</h2>
+                  <SeriesPanel
+                    item={item}
+                    readOnly={readOnly}
+                    onChange={() => (q.reload(), app.bumpData())}
+                  />
+                </section>
+              )}
+              {item.type === 'anime' && (
+                <section className="card" aria-labelledby="sec-streaming">
+                  <h2 id="sec-streaming">Where to watch (from data sources)</h2>
+                  <StreamingPanel item={item} />
+                </section>
+              )}
+              <section className="card" aria-labelledby="sec-own">
+                <h2 id="sec-own">Ownership &amp; access</h2>
+                <AvailabilityPanel item={item} readOnly={readOnly} />
+                <h3>Purchases</h3>
+                <ValuePanel item={item} readOnly={readOnly} />
+              </section>
+              <section className="card" aria-labelledby="sec-art">
+                <h2 id="sec-art">Artwork</h2>
+                <ArtworkSlotsPanel
+                  item={item}
+                  readOnly={readOnly}
+                  onChanged={() => (q.reload(), app.bumpData())}
+                />
+              </section>
+              <section className="card" aria-labelledby="sec-prefs">
+                <h2 id="sec-prefs">Preferences</h2>
+                <PrefsPanel item={item} readOnly={readOnly} prefs={prefs} onChange={setPrefsOverride} />
+              </section>
+              <section className="card" aria-labelledby="sec-source">
+                <h2 id="sec-source">{S.item.source}</h2>
+                <SourcePanel item={item} />
+              </section>
+            </MoreDetails>
           </div>
         </div>
       </SpoilerShieldContext.Provider>
@@ -837,3 +853,26 @@ function SpoilerTextAlways({ text }: { text: string }) {
 }
 
 void SpoilerText;
+
+/**
+ * Fires the quick rating prompt when this item becomes Completed by a single user action
+ * on its page (status menu, completion suggestions). Bulk edits/imports/sync never come through here.
+ */
+function useCompletionWatcher(id: string) {
+  const prev = useRef<string | null>(null);
+  const app = useApp();
+  useEffect(() => {
+    let alive = true;
+    void call(getApi().items.get({ id }))
+      .then((it) => {
+        if (!alive) return;
+        if (prev.current && prev.current !== 'completed' && it.personal.status === 'completed')
+          emitCompleted(it.id, it.meta.title, it.personal.rating);
+        prev.current = it.personal.status;
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [id, app.dataVersion]);
+}

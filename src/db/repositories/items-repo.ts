@@ -512,6 +512,7 @@ export function loadSeasons(db: Db, itemId: string): SeasonView[] {
     watched: number;
     watched_at: string | null;
     source: 'provider' | 'user';
+    skipped: number;
   }>('SELECT * FROM episodes WHERE item_id = ? ORDER BY episode_number', [itemId]);
   const bySeason = new Map<string, SeasonView['episodes']>();
   for (const e of episodes) {
@@ -526,6 +527,7 @@ export function loadSeasons(db: Db, itemId: string): SeasonView[] {
       watched: i2b(e.watched),
       watchedAt: e.watched_at,
       source: e.source,
+      skipped: i2b(e.skipped),
     });
     bySeason.set(e.season_id, list);
   }
@@ -777,8 +779,8 @@ export function loadProvenance(db: Db, itemId: string): Partial<Record<MetadataF
   return out;
 }
 
-export function loadDetail(db: Db, id: string): ItemDetail | null {
-  const row = getItemRow(db, id);
+export function loadDetail(db: Db, id: string, includeDeleted = false): ItemDetail | null {
+  const row = getItemRow(db, id, includeDeleted);
   if (!row) return null;
   const meta = loadMeta(db, row);
   const art = row.artwork_id
@@ -855,8 +857,12 @@ const SUMMARY_SELECT = `
          a.id AS art_id, a.source AS art_source, a.file_name AS art_file, a.thumb_name AS art_thumb, a.provider_id AS art_provider,
          (SELECT group_concat(t.name, '${SEP}') FROM item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.item_id = i.id) AS tag_list,
          (SELECT group_concat(name, '${SEP}') FROM (SELECT c.name FROM item_creators ic JOIN creators c ON c.id = ic.creator_id
-            WHERE ic.item_id = i.id ORDER BY ic.position LIMIT 3)) AS creator_list
-  FROM items i LEFT JOIN artwork a ON a.id = i.artwork_id`;
+            WHERE ic.item_id = i.id ORDER BY ic.position LIMIT 3)) AS creator_list,
+         ns.text AS next_step, ns.spoiler AS next_step_spoiler,
+         (SELECT count(*) FROM checklists cl JOIN checklist_items ci ON ci.checklist_id = cl.id WHERE cl.item_id = i.id) AS cl_total,
+         (SELECT count(*) FROM checklists cl JOIN checklist_items ci ON ci.checklist_id = cl.id WHERE cl.item_id = i.id AND ci.checked_at IS NOT NULL) AS cl_done,
+         (SELECT lq.state FROM lookup_queue lq WHERE lq.item_id = i.id) AS queue_state
+  FROM items i LEFT JOIN artwork a ON a.id = i.artwork_id LEFT JOIN item_next_steps ns ON ns.item_id = i.id`;
 
 interface SummaryRow {
   id: string;
@@ -878,6 +884,11 @@ interface SummaryRow {
   art_provider: string | null;
   tag_list: string | null;
   creator_list: string | null;
+  next_step?: string | null;
+  next_step_spoiler?: number | null;
+  cl_total?: number | null;
+  cl_done?: number | null;
+  queue_state?: string | null;
 }
 
 export function toSummary(r: SummaryRow): ItemSummary {
@@ -906,6 +917,10 @@ export function toSummary(r: SummaryRow): ItemSummary {
     thumbUrl: art?.thumbUrl ?? null,
     progressPercent: r.progress_pct,
     progressLabel: r.progress_label,
+    nextStep: r.next_step ?? null,
+    nextStepSpoiler: r.next_step_spoiler === 1,
+    checklist: r.cl_total ? { done: r.cl_done ?? 0, total: r.cl_total } : null,
+    waitingForDetails: r.queue_state === 'waiting' || r.queue_state === 'failed' || r.queue_state === 'found',
   };
 }
 

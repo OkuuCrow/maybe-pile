@@ -1,0 +1,43 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`§14.8 share page > has table semantics and a caption; snapshot 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My pile</title>
+<style>
+:root{color-scheme:light dark;--bg:#fbfaf7;--fg:#1d1b18;--muted:#5b574f;--line:#d9d5cc;--head:#f0ede6}
+@media (prefers-color-scheme:dark){:root{--bg:#161513;--fg:#f1eee8;--muted:#b8b2a6;--line:#3a3732;--head:#211f1c}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px}
+h1{font-size:1.6rem;margin:0 0 4px}
+.meta{color:var(--muted);margin:0 0 20px}
+table{width:100%;border-collapse:collapse}
+caption{text-align:left;color:var(--muted);padding-bottom:8px}
+th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:middle}
+thead th{background:var(--head)}
+img{width:48px;height:72px;object-fit:cover;border-radius:4px;display:block}
+footer{color:var(--muted);font-size:.85rem;margin-top:24px}
+</style>
+</head>
+<body>
+<main>
+<h1>My pile</h1>
+<p class="meta">1 item · 2026-11-26</p>
+<table>
+<caption>My pile</caption>
+<thead><tr><th scope="col">Title</th><th scope="col">Type</th><th scope="col">Rating</th></tr></thead>
+<tbody>
+<tr><th scope="row">Dune</th><td>Book</td><td>9/10</td></tr>
+</tbody>
+</table>
+<footer>Made with Maybe Pile. This page works offline and contains no scripts or tracking.</footer>
+</main>
+</body>
+</html>
+"
+`;

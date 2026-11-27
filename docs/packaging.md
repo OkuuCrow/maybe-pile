@@ -65,3 +65,16 @@ git push origin v1.1.0
 ```
 
 It builds on GitHub's runners: Windows (`Maybe-Pile-Setup-<v>.exe`, `Maybe-Pile-Portable-<v>.exe`) and Linux (`Maybe-Pile-<v>-x86_64.AppImage`, `maybe-pile_<v>_amd64.deb`, `maybe-pile-<v>.x86_64.rpm`, `Maybe-Pile-<v>-x64.tar.gz`). It then creates the release with a `SHA256SUMS.txt`. You can also run it manually from the Actions tab with a tag name. macOS packages aren't included (they need a Mac signing identity to be usable).
+
+## 2.1: notifications
+
+- `electron-builder.yml` declares the `maybepile` protocol (NSIS registers it per user; Linux `.desktop` gets
+  `MimeType=x-scheme-handler/maybepile;`). Portable builds register it at runtime only when a background
+  reminder mode is enabled; AppImage gets an optional per-user URL-handler `.desktop` file.
+- `app.setAppUserModelId('app.maybepile.desktop')` matches the electron-builder `appId`, which NSIS uses for
+  its shortcuts. If the user declined the Start Menu shortcut, enabling a background mode offers to create one
+  (toasts need it); the user's choice in the installer still works.
+- NSIS uninstall (not during updates) deletes the `MaybePile\ReminderCheck` task, the login item and the
+  protocol key. Linux packages cannot remove per-user files: see notifications-troubleshooting.md.
+- The Linux helper ships as `dist/helper/reminder-check.cjs` inside `app.asar`; it is copied to the user data
+  folder when scheduled mode is enabled (works for deb/rpm/AppImage alike).

@@ -12,6 +12,11 @@ files:
   - build/icon.png
   - package.json
 asar: true
+# 2.1: notification clicks / silent snooze+mute actions (strict allowlist: docs/security.md "Protocol").
+# NSIS registers it per user; deb/rpm add MimeType=x-scheme-handler/maybepile to the .desktop file.
+protocols:
+  - name: Maybe Pile
+    schemes: [maybepile]
 fileAssociations:
   - ext: mpbackup
     name: Maybe Pile Backup
@@ -83,6 +88,7 @@ linux:
       Categories: Utility;AudioVideo;
       Keywords: backlog;movies;tv;games;books;tracker;
       StartupWMClass: Maybe Pile
+      MimeType: x-scheme-handler/maybepile;
 appImage:
   artifactName: Maybe-Pile-${version}-${arch}.${ext}
 deb:

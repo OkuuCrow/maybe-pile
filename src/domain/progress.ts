@@ -32,6 +32,8 @@ export interface EpisodeLike {
   number: number;
   title: string | null;
   watched: boolean;
+  /** 2.1 §16.8: skipped (filler/recap/special). Counts toward "caught up", never as watched or watch time. */
+  skipped?: boolean;
 }
 
 export interface SeasonLike {
@@ -96,6 +98,8 @@ const NONE: ProgressSummary = {
 
 export interface TvTotals {
   watched: number;
+  /** Skipped episodes (reported separately; count toward completion). */
+  skipped: number;
   total: number;
   totalKnown: boolean;
   specialsWatched: number;
@@ -105,6 +109,7 @@ export interface TvTotals {
 export function tvTotals(seasons: readonly SeasonLike[]): TvTotals {
   const regular = [...seasons].filter((s) => s.number > 0).sort((a, b) => a.number - b.number);
   let watched = 0;
+  let skipped = 0;
   let total = 0;
   let totalKnown = regular.length > 0;
   let next: TvTotals['next'] = null;
@@ -112,11 +117,14 @@ export function tvTotals(seasons: readonly SeasonLike[]): TvTotals {
     const listed = s.episodes.length;
     const w = s.episodes.filter((e) => e.watched).length;
     watched += w;
+    skipped += s.episodes.filter((e) => e.skipped && !e.watched).length;
     // A season's total is the larger of the stated count and episodes actually listed.
     total += Math.max(s.episodeCountKnown ?? 0, listed);
     if (s.episodeCountKnown === null && listed === 0) totalKnown = false;
     if (!next) {
-      const firstUnwatched = [...s.episodes].sort((a, b) => a.number - b.number).find((e) => !e.watched);
+      const firstUnwatched = [...s.episodes]
+        .sort((a, b) => a.number - b.number)
+        .find((e) => !e.watched && !e.skipped);
       if (firstUnwatched)
         next = { season: s.number, episode: firstUnwatched.number, title: firstUnwatched.title };
     }
@@ -125,7 +133,7 @@ export function tvTotals(seasons: readonly SeasonLike[]): TvTotals {
     .filter((s) => s.number === 0)
     .reduce((n, s) => n + s.episodes.filter((e) => e.watched).length, 0);
   if (total === 0) totalKnown = false;
-  return { watched, total, totalKnown, specialsWatched, next };
+  return { watched, skipped, total, totalKnown, specialsWatched, next };
 }
 
 function tvSummary(i: ProgressInputs): ProgressSummary {
@@ -140,17 +148,20 @@ function tvSummary(i: ProgressInputs): ProgressSummary {
       label:
         t.watched === 0 && !hasAny
           ? 'No episodes watched · total unknown'
-          : `${t.watched} watched · total unknown`,
+          : `${t.watched} watched${t.skipped ? ` · ${t.skipped} skipped` : ''} · total unknown`,
       nextAction,
       isComplete: false,
       hasAnyProgress: hasAny,
     };
   }
   const soFar = i.showStatus === 'returning' ? ' (so far)' : '';
-  const isComplete = t.watched >= t.total;
+  const done = t.watched + t.skipped;
+  const isComplete = done >= t.total;
   return {
-    percent: roundPct((t.watched / t.total) * 100),
-    label: `${t.watched} of ${t.total} episodes${soFar}`,
+    percent: roundPct((Math.min(done, t.total) / t.total) * 100),
+    label: t.skipped
+      ? `${t.watched} watched · ${t.skipped} skipped · ${t.total} total${soFar}`
+      : `${t.watched} of ${t.total} episodes${soFar}`,
     nextAction: isComplete ? null : nextAction,
     isComplete,
     hasAnyProgress: hasAny,

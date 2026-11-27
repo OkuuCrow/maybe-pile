@@ -8,6 +8,8 @@
  *
  * This file has no runtime dependencies so the sandboxed preload stays tiny.
  */
+import { API_SHAPE_21, EVENT_CHANNELS_21 } from './ipc-channels-21';
+
 export const API_SHAPE = {
   app: {
     info: 'app:info',
@@ -287,11 +289,13 @@ export const API_SHAPE = {
     backupList: 'data:backupList',
     restoreInternalPreview: 'data:restoreInternalPreview',
   },
+  ...API_SHAPE_21,
 } as const;
 
 /** Main → renderer push events (fixed names; renderer may only subscribe). */
 export const EVENT_CHANNELS = {
   menuCommand: 'event:menuCommand',
+  ...EVENT_CHANNELS_21,
 } as const;
 
 export const MENU_COMMANDS = [

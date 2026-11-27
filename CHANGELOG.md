@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.1.0 — Notifications Pack + Simple Mode (2026-11-26)
+
+### New
+
+- **Notifications and reminders** (Windows, Linux; all off by default): delivery modes *While the app is open*, *Keep running in the background (tray)* with optional start at login, and *Wake on schedule* (per-user Task Scheduler task / systemd user timer running a read-only, display-free helper). 15 categories, custom once/repeating reminders, quiet hours, allowed days, daily and per-category caps with digests, catch-up after sleep (at most one summary), privacy levels (titles / generic / count), Spoiler Shield and adult-title rules, pause, per-item mute/snooze, notification history, service status with Test / Run now / Repair / Remove, self-repair when the app moves, exactly-once delivery across modes (`notify-state.sqlite`), and a `maybepile://` link handler with a strict allowlist (click to open; silent snooze/mute).
+- **Simple Mode**: Home/Library/Settings navigation, find-or-add omnibox, one-tap progress with Undo, two-step Add, simplified Library and item pages (“More details”), 3-step welcome, plain-language Settings with a single Reminders card and presets, larger text and spacing options. Feature registry with core/advanced tiers.
+- **§14**: time-based goals (from sessions), cover wall, quick rating prompt, saved views (pin, export/import), item templates, paste a list to import (text), backup destination check, self-contained share page, checklists, lent/borrowed tracking.
+- **§15**: key-free artwork from TVmaze and Wikimedia Commons (terms reviewed; iTunes, Internet Archive and unofficial services excluded), backdrops (Ambient / Banner / Full-page blurred) with an AA-guaranteed scrim, per-item backdrop style, artwork cache cap with LRU eviction and “Clear cached images”.
+- **§16**: Recently deleted (30-day trash), Recent changes with per-change undo, Library check-up with previewed, snapshotted fixes, Triage, Bulk edit with preview and one undo, Next step line, offline add queue, automatic status rules, skipped episodes, Recommended by, per-item journal (FTS), theme schedule, richer tray menu, restore my place (route, scroll, window on a connected display), multiple libraries.
+
+### Changed
+
+- Deleted items now stay in **Recently deleted** for 30 days (previously purged at the next start) and are included in backups and exports.
+- Release Radar / Leaving Soon notifications moved into the new system; users who had them on keep them (“While the app is open”).
+- Settings are read forward-compatibly: new fields added to a setting no longer reset what you chose.
+- The dialog focus trap handles radio groups like browsers do.
+
+### Not included / known limits
+
+- Screenshot (OCR) import; macOS background scheduling; bundling the OpenDyslexic font (the option uses it when installed); manual screen-reader passes. See the 2.1 notes in `docs/product-decisions.md`.
+
+### Migration notes
+
+- **Schema v6 → v7** (new tables + three added columns; libraries that already exist stay in Full mode). Tested upgrade with data and injected-failure rollback.
+- **JSON export `formatVersion` 3 → 4** (optional `pack21` section). Older files import unchanged.
+- `notify-state.sqlite` (new, runtime only) is never backed up; background registrations are never restored from backups.
+
+
 ## 2.0.0 — Expansion Pack 2 (2026-11-25)
 
 ### New

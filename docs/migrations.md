@@ -66,3 +66,15 @@ v4 is covered by `tests/integration/feature-pack.test.ts › migration v3 → v4
 ## v6 — `sync` (2.0)
 
 New tables only: `sync_state` (device ID, last sequence number), `sync_baseline` (agreed field values per natural key, as JSON), `sync_cursors` (read position per other device) and `sync_conflicts`. No existing tables are rebuilt.
+
+## v7 — `notifications_pack` (2.1)
+
+New tables only (see data-model.md) plus three additive `ALTER TABLE … ADD COLUMN` (episodes.skipped,
+run_episode_states.skipped, item_prefs.backdrop_style); foreign keys stay on. It also inserts
+`interface = {level: "full", …}` for libraries that already have items or settings, so upgrading users keep
+the Full interface. Tested: v6 → v7 upgrade with data, fresh install defaults, injected failure at v7 rolls
+back to v6 (`tests/integration/notifications.test.ts`).
+
+`notify-state.sqlite` has its own versioned mini-migrations (`state_migrations`); a newer state file is
+refused and notifications degrade to off instead of breaking the app. The helper never migrates anything: on
+a schema mismatch it exits quietly (exit code 3).

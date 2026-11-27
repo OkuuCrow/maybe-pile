@@ -1,6 +1,6 @@
 # Verification log
 
-What was actually run while building Maybe Pile (1.0.0, and the 1.2.0 feature pack), and the results. Nothing is marked as verified unless it was run here.
+What was actually run while building Maybe Pile (1.0.0, the 1.2.0 feature pack, 2.0 and 2.1.0), and the results. Nothing is marked as verified unless it was run here.
 
 ## Environment
 
@@ -12,6 +12,28 @@ What was actually run while building Maybe Pile (1.0.0, and the 1.2.0 feature pa
 | Electron | 45.4.1 (runtime Node 24.22.3, SQLite 3.54.1 via `node:sqlite`) |
 | Shell quirk | The environment exports `ELECTRON_RUN_AS_NODE=1`, which makes Electron start as plain Node. All launch scripts and e2e tests remove it. |
 | OS policy | Windows Application Control blocks unsigned executables (see packaging below). |
+
+## 2.1.0 Notifications Pack + Simple Mode — what was run (26 Nov 2026)
+
+Same machine. No dependency was added (installing `@fontsource/opendyslexic` was blocked by the
+environment's permission policy). Electron's binary was re-fetched lazily by its package on first use.
+
+| Command | Result |
+| --- | --- |
+| `npm run lint` | 0 problems |
+| `npm run typecheck` | 0 errors (node, web, ui-tests projects) |
+| `npx vitest run` | 26 files passed, 1 skipped (opt-in desktop file); **805 tests passed, 2 skipped** |
+| `npx playwright test` (after `npm run build`) | **3 passed** (smoke, pack2, new simple-mode spec) |
+| `npx prettier --check .` | all files formatted |
+| `MAYBEPILE_DESKTOP_IT=1 npx vitest run tests/integration/desktop.optin.test.ts` | Windows: created a **disabled** task `\MaybePile\IntegrationTest-…` from the generated XML without admin rights, read it back (`/Query /XML` parsed: command, args, 15-min interval, disabled), deleted it, re-query failed as expected — **passed**. Linux part skipped (not Linux). |
+| `ELECTRON_RUN_AS_NODE=1 electron.exe dist/helper/reminder-check.cjs --reminder-check --data-dir <fixture> --dry-run` | exit 0, planned 1 notification, ~126 ms per run (3 runs); bad args → exit 2 |
+| `electron.exe . --reminder-check` (fixture library, `MAYBEPILE_USER_DATA`) | exit 0 in ~2.1 s (1.5 s is the deliberate hand-off grace), 1 delivered, Electron emitted the toast `show` event, no window created; a second run delivered 0 (exactly-once) |
+| `electron.exe . "maybepile://action/mute?target=category:keepGoing"` | no window, mute written to notify-state, exit 0 |
+| `electron.exe . "maybepile://action/delete?target=x"` | ignored by the allowlist (the app just opened normally until the 30 s timeout) |
+| `npm run dist:win` | built `release/Maybe-Pile-Setup-2.1.0.exe` and `release/Maybe-Pile-Portable-2.1.0.exe`; asar inspected: `dist/helper/reminder-check.cjs` present, version 2.1.0 |
+
+Not observed: the toast on screen (no screen access), toast buttons, the installed app's protocol
+registration and NSIS uninstall cleanup (packaged builds cannot run here), anything on Linux.
 
 ## 1.2.0 feature pack — what was run (23 Nov 2026)
 

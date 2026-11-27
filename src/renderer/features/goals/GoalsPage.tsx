@@ -1,3 +1,4 @@
+import { TimeGoals } from './TimeGoals';
 /**
  * Goals: simple targets with plain-text pace ("On pace", "Behind pace") and
  * the math shown. Suggestions, never nags: no notifications.
@@ -85,7 +86,11 @@ export function GoalsPage() {
           New goal
         </button>
       </div>
-      <p className="muted">Goals are gentle targets. Maybe Pile never sends notifications about them.</p>
+      <p className="muted">
+        Goals are gentle targets. Notifications about them are off unless you turn on “Goals pace” or “Daily
+        time goal” in Settings → Notifications.
+      </p>
+      <TimeGoals />
       {q.loading && !q.data && <Loading />}
       {q.error && <ErrorBox error={q.error} onRetry={q.reload} />}
       {q.data && q.data.length === 0 && (

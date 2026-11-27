@@ -37,7 +37,7 @@ export function Dashboard() {
             <button
               type="button"
               className="button button-primary"
-              onClick={app.openAdd}
+              onClick={() => app.openAdd()}
               disabled={app.info?.readOnly}
             >
               {S.dashboard.emptyAction}

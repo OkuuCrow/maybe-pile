@@ -56,6 +56,14 @@
 !macroend
 
 !macro customUnInstall
+  ; 2.1: on a real uninstall (never during an update), remove the background reminder components the
+  ; user created (per-user only): scheduled task, start-at-login value, maybepile:// handler.
+  ${IfNot} ${isUpdated}
+    nsExec::Exec 'schtasks /Delete /TN "MaybePile\ReminderCheck" /F'
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "app.maybepile.desktop"
+    DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Maybe Pile"
+    DeleteRegKey HKCU "Software\Classes\maybepile"
+  ${EndIf}
   Delete "$DESKTOP\Maybe Pile.lnk"
   Delete "$SMPROGRAMS\Maybe Pile.lnk"
   ; Never prompt during an update; only on a real uninstall. Default answer keeps the data.

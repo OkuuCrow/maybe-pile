@@ -196,3 +196,79 @@ Decisions the brief left open, recorded as required.
 ### Format versions
 
 JSON export `formatVersion` 2 → **3** (optional `pack2` section; older files still import). Schema version 4 → **6** (v5 Expansion Pack 2, v6 sync). The `.mpbackup` container stays at 1.
+
+## 2.1 — Notifications Pack + Simple Mode
+
+### Notifications
+
+- **Everything off by default**; background components are created only after a confirmation dialog listing
+  each file/task, its location, command line and undo. Per-user only, never admin/root.
+- **Default privacy level: Show titles.** A reminder that says “something is waiting” is rarely useful; the
+  user can see what will be shown (live previews), gets a lock-screen hint next to the setting and a one-click
+  “Hide titles instead”. Adult items and Spoiler-Shield content are generic regardless.
+- **Separate `notify-state.sqlite`** instead of tables in the library: the headless helper must never write the
+  library (read-only guarantee), the state is runtime data that should not travel in backups, and resident +
+  helper + in-app runs need one shared claim table across libraries.
+- **Exactly-once by claiming dedupe keys** (`INSERT`-or-abort in one IMMEDIATE transaction) rather than
+  “last run time” bookkeeping: overlapping processes stay safe without coordination; failures retry with
+  backoff (3 attempts) instead of looping.
+- **Helper entry per OS**: Windows uses the app executable with `--reminder-check` (toasts need the app's
+  AppUserModelID and protocol-activated buttons). Linux uses Node mode (`ELECTRON_RUN_AS_NODE`) with a copied
+  script, because a systemd user service usually has no display; tested empirically on this Windows machine
+  under the real Electron binary (Node mode + flag mode).
+- **No D-Bus dependency**: Linux headless delivery calls `gdbus` (part of GLib on virtually every desktop) with
+  argument arrays and falls back to `notify-send`. A JS D-Bus library would add an unaudited native-free but
+  large dependency; the CLI path is easy to test (argument generation) and to troubleshoot.
+- **Custom reminders store an anchor + structured rule** (never cron strings). Occurrences are computed from
+  the schedule, so the read-only helper can fire them without writing `next_fire_at` (kept as a display cache).
+- **Pause, snooze and mute live in the state DB** so silent protocol actions and the tray work without opening
+  the library.
+- **Quiet-hours policy**: everything defers into one summary except “Session still running” and “Offline queue
+  finished”, which are only useful in the moment and are skipped.
+- **Catch-up**: at most one “While you were away” summary for the last 24 h; older items are recorded as missed.
+- **Upgrade**: users who had the 1.x/2.0 while-open Release Radar / Leaving Soon notifications get mode “While
+  the app is open” with the same categories; nothing new is installed.
+- **Restores never re-create registrations**: a background mode with nothing installed on this computer falls
+  back to “While the app is open” with a notice.
+- **Dev builds** cannot register background components (they would point at a bare electron.exe); the UI says
+  so. `MAYBEPILE_DEV_BACKGROUND=1` overrides for development.
+
+### Simple Mode
+
+- New installs → Simple; existing libraries → Full + a one-time offer (detected in migration v7: a library
+  with items or stored settings is “existing”).
+- Simple uses a fixed Home; Full keeps the saved dashboard layout. Themes apply in both.
+- Recently deleted is core but not in the 4-item sidebar: reachable from Library (Full), Backup & restore
+  and the omnibox.
+
+### §14–§16
+
+- **Trash retention 30 days** (was: soft-deleted items purged at the next start). Backups and exports now keep
+  Recently deleted items with their deletion time.
+- **Change log**: snapshot-diff of a fixed field list around each mutating command (not database triggers);
+  notes recorded only as “notes edited”. Undo only when the field still has the logged value.
+- **Undo for one-tap actions** uses inverse operations through the normal services plus an exact restore of the
+  status dates — consistent runs/Up Next/history rather than raw row restores. Tokens live 10 minutes in memory.
+- **Skipped episodes** count toward completion and “caught up”, never as watched or time.
+- **Auto rules** run only in the app process and never delete; “stale” is a flag (`item_flags`).
+- **“Waiting for details”** is a queue state + badge, not a new item status (a status change would need a table
+  rebuild of `items` and would leak into every status filter).
+- **Screenshot OCR not shipped** (bundle size/licensing not reviewed); text-list import only.
+- **Dyslexia font**: the code prefers OpenDyslexic but the font is not bundled — installing a new npm
+  dependency was not permitted in this build environment. Tracked as a follow-up.
+- **Multiple libraries**: the first library stays in the user-data root (no move = no migration risk);
+  others live in `libraries/<id>/`. Switching restarts the app so no service ever mixes libraries.
+- **Share page**: provider artwork off by default; adult items off by default; CSP without any `script-src`.
+
+### Key-free images (§15) — terms reviewed 2026-11-26
+
+- Enabled: **TVmaze** (CC BY-SA, hotlinking and caching explicitly allowed, link-back credit) and **Wikimedia
+  Commons** (per-file licenses from `extmetadata`; only PD/CC0/CC BY/CC BY-SA; descriptive User-Agent).
+- Excluded: **Apple iTunes Search API** (artwork may only be used to promote store content, next to a store
+  badge), **Internet Archive** (terms page could not be read; thumbnail service undocumented), **unofficial
+  IMDb-keyed community image services** (rights unclear). No “unofficial sources” toggle is offered.
+
+### Format versions
+
+JSON export `formatVersion` 3 → **4** (optional `pack21` section; Recently-deleted items included). Schema
+version 6 → **7**. The `.mpbackup` container stays at 1.

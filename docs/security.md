@@ -74,7 +74,7 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `app:chooseBackupFolder` | `app.chooseBackupFolder` | Choose default export/backup folder | — | `Result<…>` | folder dialog → main-owned setting |
 | `app:acknowledgeNotices` | `app.acknowledgeNotices` | Dismiss upgrade/recovery notices | — | `Result<…>` | in-memory |
 | `settings:get` | `settings.get` | Read settings | — | `Result<…>` | none |
-| `settings:update` | `settings.update` | Update non-secret settings (strict schema) | { activeThemeId, region, autoApplySuggestions, libraryView, libraryQuery, providerEnabled, csvBom, lastSeenSchemaVersion, upNextMax, pick, pileHealth, releaseRadar, quickCapture, stats, importUndoRetentionDays, anime, artwork, spoilers, value, sessions, availability, recommendations } | `Result<…>` | DB write |
+| `settings:update` | `settings.update` | Update non-secret settings (strict schema) | { activeThemeId, region, autoApplySuggestions, libraryView, libraryQuery, providerEnabled, csvBom, lastSeenSchemaVersion, upNextMax, pick, pileHealth, releaseRadar, quickCapture, stats, importUndoRetentionDays, anime, artwork, spoilers, value, sessions, availability, recommendations, interface, backdrops, artworkSources, trash, changeLog, ratingPrompt, autoRules, themeSchedule, place, nextStep } | `Result<…>` | DB write |
 | `items:query` | `items.query` | Search/filter/sort library page | { text, types, statuses, tags, tagMode, ratingMin, ratingMax, addedFrom, addedTo, sort, direction, offset, limit, listId, upNextOnly, health } | `Result<…>` | none |
 | `items:get` | `items.get` | Item detail | { id } | `Result<…>` | none |
 | `items:create` | `items.create` | Create item (duplicate check) | { type, meta, personal, seasons, milestones, allowDuplicate } | `Result<…>` | DB write |
@@ -281,6 +281,109 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 | `data:backupCreate` | `data.backupCreate` | Create .mpbackup | — | `Result<…>` | save dialog → file write |
 | `data:backupList` | `data.backupList` | List safety snapshots | — | `Result<…>` | none |
 | `data:restoreInternalPreview` | `data.restoreInternalPreview` | Preview restoring a safety snapshot | { label } | `Result<…>` | staging in temp folder |
+| `notify:status` | `notify.status` | Notification mode, adapter and background-component health | — | `Result<…>` | reads Task Scheduler / systemd status |
+| `notify:plan` | `notify.plan` | List the exact components a mode would create (confirmation dialog) | { settings } | `Result<…>` | none |
+| `notify:apply` | `notify.apply` | Save notification settings; installs/removes background components only after confirmation | { settings, confirmed } | `Result<…>` | DB write; per-user scheduled task / systemd user units / autostart file / login item |
+| `notify:test` | `notify.test` | Show a test notification | — | `Result<…>` | OS notification |
+| `notify:runNow` | `notify.runNow` | Run one reminder check now | — | `Result<…>` | notify-state.sqlite write; OS notification |
+| `notify:repair` | `notify.repair` | Re-register background components for this executable | — | `Result<…>` | per-user OS registrations |
+| `notify:removeBackground` | `notify.removeBackground` | Remove all background components and verify by re-query | — | `Result<…>` | per-user OS registrations |
+| `notify:history` | `notify.history` | Notification history (category, time, outcome) | { days } | `Result<…>` | none |
+| `notify:clearHistory` | `notify.clearHistory` | Clear notification history | — | `Result<…>` | notify-state.sqlite write |
+| `notify:preview` | `notify.preview` | Exact text a category would show | { category, settings } | `Result<…>` | none |
+| `notify:pause` | `notify.pause` | Pause/resume all notifications | { duration } | `Result<…>` | notify-state.sqlite write |
+| `notify:itemControls` | `notify.itemControls` | Per-item mute/snooze state and reminders | { itemId } | `Result<…>` | none |
+| `notify:setItemMute` | `notify.setItemMute` | Mute/unmute reminders for an item | { itemId, muted } | `Result<…>` | notify-state.sqlite write |
+| `notify:snoozeItem` | `notify.snoozeItem` | Snooze reminders for an item | { itemId, duration } | `Result<…>` | notify-state.sqlite write |
+| `reminders:list` | `reminders.list` | Custom reminders (optionally for one item) | { itemId } | `Result<…>` | none |
+| `reminders:save` | `reminders.save` | Create/edit a custom reminder (structured repeat rule) | { id, itemId, message, kind, date, time, rule, enabled } | `Result<…>` | DB write |
+| `reminders:delete` | `reminders.remove` | Delete a custom reminder | { id } | `Result<…>` | DB write |
+| `reminders:setEnabled` | `reminders.setEnabled` | Enable/disable a custom reminder | { id, enabled } | `Result<…>` | DB write |
+| `quick:act` | `quick.act` | One-tap progress/status action (Simple Mode) with undo token | { itemId, action, value } | `Result<…>` | DB write (logged in Recent changes) |
+| `quick:undo` | `quick.undo` | Undo a one-tap action | { token } | `Result<…>` | DB write |
+| `quick:omnibox` | `quick.omnibox` | Search the library for the omnibox | { text } | `Result<…>` | none |
+| `trash:list` | `trash.list` | Recently deleted items with purge dates | — | `Result<…>` | none |
+| `trash:restore` | `trash.restore` | Restore items from Recently deleted | { ids } | `Result<…>` | DB write |
+| `trash:purge` | `trash.purge` | Delete selected trashed items permanently (confirmed in UI) | { ids } | `Result<…>` | DB write |
+| `trash:empty` | `trash.empty` | Empty Recently deleted (count must match the confirmed count) | { confirmCount } | `Result<…>` | DB write |
+| `changes:list` | `changes.list` | Recent changes log (no notes text) | { limit } | `Result<…>` | none |
+| `changes:undo` | `changes.undo` | Undo one logged change if unchanged since | { id } | `Result<…>` | DB write |
+| `changes:undoBatch` | `changes.undoBatch` | Undo a bulk/rule/triage batch | { batchId } | `Result<…>` | DB write |
+| `changes:clear` | `changes.clear` | Clear the change log | — | `Result<…>` | DB write |
+| `extras:forItem` | `extras.forItem` | Next step, checklist, loans, recommender for an item | { itemId } | `Result<…>` | none |
+| `extras:setNextStep` | `extras.setNextStep` | Set/clear the Next step line | { itemId, text, spoiler } | `Result<…>` | DB write |
+| `extras:checklist` | `extras.checklist` | Add/edit/check/move/delete a checklist entry | discriminated union | `Result<…>` | DB write |
+| `extras:loans` | `extras.loans` | Loans (lent / borrowed) | { openOnly } | `Result<…>` | none |
+| `extras:saveLoan` | `extras.saveLoan` | Create/edit a loan (person name stored locally) | { id, itemId, person, direction, loanedOn, dueOn, returnedOn, note } | `Result<…>` | DB write |
+| `extras:deleteLoan` | `extras.deleteLoan` | Delete a loan | { id } | `Result<…>` | DB write |
+| `extras:setRecommender` | `extras.setRecommender` | Set/clear Recommended by | { itemId, person, note, recommendedOn } | `Result<…>` | DB write |
+| `extras:people` | `extras.people` | People with loan/recommendation counts | — | `Result<…>` | none |
+| `extras:peopleNames` | `extras.peopleNames` | Autocomplete names | — | `Result<…>` | none |
+| `extras:renamePerson` | `extras.renamePerson` | Rename (merges on clash) | { id, name } | `Result<…>` | DB write |
+| `extras:mergePeople` | `extras.mergePeople` | Merge two people | { fromId, intoId } | `Result<…>` | DB write |
+| `extras:forgetPerson` | `extras.forgetPerson` | Anonymize a person everywhere | { id } | `Result<…>` | DB write |
+| `extras:recommendedBy` | `extras.recommendedBy` | Items recommended by a person | { id } | `Result<…>` | none |
+| `extras:journal` | `extras.journal` | Journal entries of an item | { itemId } | `Result<…>` | none |
+| `extras:saveJournal` | `extras.saveJournal` | Create/edit a journal entry (FTS indexed) | { id, itemId, entryDate, body, progressLabel, spoiler } | `Result<…>` | DB write |
+| `extras:deleteJournal` | `extras.deleteJournal` | Delete a journal entry | { id } | `Result<…>` | DB write |
+| `extras:searchJournal` | `extras.searchJournal` | Local full-text search over journal entries | { text } | `Result<…>` | none |
+| `extras:skipEpisodes` | `extras.skipEpisodes` | Mark episodes skipped / not skipped | { itemId, episodeIds, skipped } | `Result<…>` | DB write |
+| `extras:ratingPrompt` | `extras.ratingPrompt` | Save the quick rating prompt (rating, note, moods) | { itemId, rating, note, moodIds } | `Result<…>` | DB write |
+| `views:list` | `views.list` | Saved views | — | `Result<…>` | none |
+| `views:save` | `views.save` | Create/edit a saved view (validated query) | { id, name, query, viewMode, pinned } | `Result<…>` | DB write |
+| `views:duplicate` | `views.duplicate` | Duplicate a view | { id } | `Result<…>` | DB write |
+| `views:delete` | `views.remove` | Delete a view (confirmed in UI) | { id } | `Result<…>` | DB write |
+| `views:move` | `views.move` | Reorder views | { id, direction } | `Result<…>` | DB write |
+| `views:starters` | `views.starters` | Starter view suggestions (not auto-created) | — | `Result<…>` | none |
+| `views:export` | `views.exportFile` | Export a view as .mpview.json | { id } | `Result<…>` | save dialog → file write |
+| `views:import` | `views.importFile` | Import a validated .mpview.json (64 KB cap) | — | `Result<…>` | open dialog → DB write |
+| `templates:list` | `templates.list` | Item templates | — | `Result<…>` | none |
+| `templates:save` | `templates.save` | Create/edit a template (validated body) | { id, name, body } | `Result<…>` | DB write |
+| `templates:duplicate` | `templates.duplicate` | Duplicate a template | { id } | `Result<…>` | DB write |
+| `templates:delete` | `templates.remove` | Delete a template (items keep their data) | { id } | `Result<…>` | DB write |
+| `templates:starters` | `templates.starters` | Starter templates (user-accepted) | — | `Result<…>` | none |
+| `templates:export` | `templates.exportFile` | Export a template as .mptemplate.json | { id } | `Result<…>` | save dialog → file write |
+| `templates:import` | `templates.importFile` | Import a validated .mptemplate.json (64 KB cap) | — | `Result<…>` | open dialog → DB write |
+| `timeGoals:list` | `timeGoals.list` | Time-based goals with progress and pace | { includeArchived } | `Result<…>` | none |
+| `timeGoals:save` | `timeGoals.save` | Create/edit a time goal | { id, title, targetMinutes, period, mediaType, listId, moodId } | `Result<…>` | DB write |
+| `timeGoals:archive` | `timeGoals.archive` | Archive/unarchive a time goal | { id, archived } | `Result<…>` | DB write |
+| `timeGoals:delete` | `timeGoals.remove` | Delete a time goal | { id } | `Result<…>` | DB write |
+| `wall:items` | `wall.items` | Completed items for the cover wall | { year, type, sort } | `Result<…>` | none |
+| `wall:years` | `wall.years` | Years with completed items | — | `Result<…>` | none |
+| `wall:savePng` | `wall.savePng` | Capture the cover wall as PNG | { rect } | `Result<…>` | save dialog → file write |
+| `paste:parse` | `paste.parse` | Parse a pasted list (no network) | { text, defaultType } | `Result<…>` | none |
+| `paste:match` | `paste.match` | Look up parsed lines one at a time (rate-limited) | { token, lineIds } | `Result<…>` | provider HTTP |
+| `paste:apply` | `paste.apply` | Import confirmed lines as one undoable batch | { token, decisions, status } | `Result<…>` | DB write; provider HTTP |
+| `queue:add` | `queue.add` | Add an item offline; queue its lookup | { title, type, year } | `Result<…>` | DB write |
+| `queue:list` | `queue.list` | Offline lookup queue | — | `Result<…>` | none |
+| `queue:process` | `queue.process` | Retry queued lookups now | — | `Result<…>` | provider HTTP; DB write |
+| `queue:retry` | `queue.retry` | Retry one queued lookup | { id } | `Result<…>` | DB write |
+| `queue:cancel` | `queue.cancel` | Cancel a queued lookup (item kept) | { id } | `Result<…>` | DB write |
+| `queue:apply` | `queue.apply` | Apply a reviewed match (fills empty fields only) | { id, candidate } | `Result<…>` | provider HTTP; DB write |
+| `checkup:run` | `checkup.run` | Read-only library diagnostics | — | `Result<…>` | none (records last check-up time) |
+| `checkup:fix` | `checkup.fix` | Apply previewed fixes after a DB snapshot, in one transaction | { fixes } | `Result<…>` | DB snapshot + write; artwork gc |
+| `checkup:exportReport` | `checkup.exportReport` | Save a redacted check-up report | — | `Result<…>` | save dialog → file write |
+| `bulkEdit:preview` | `bulkEdit.preview` | Before/after counts and exceptions | { ids, change } | `Result<…>` | none |
+| `bulkEdit:apply` | `bulkEdit.apply` | Apply bulk edit in one transaction (one undo batch) | { ids, change } | `Result<…>` | DB write |
+| `rules:preview` | `rules.preview` | What the opt-in status rules would change now | — | `Result<…>` | none |
+| `rules:run` | `rules.run` | Run opt-in rules (never deletes; one undo batch) | — | `Result<…>` | DB write |
+| `triage:queue` | `triage.queue` | Items for triage | { source, id } | `Result<…>` | none |
+| `triage:act` | `triage.act` | Apply a triage action; returns its undo | { itemId, action, snoozeDays } | `Result<…>` | DB write |
+| `triage:undo` | `triage.undo` | Undo a triage action | { undo } | `Result<…>` | DB write |
+| `backupCheck:current` | `backupCheck.current` | Same-drive / cloud / removable hints for the backup folder | — | `Result<…>` | stat of that folder only |
+| `sharePage:preview` | `sharePage.preview` | Build the share page in memory | { title, source, fields, includeAdult, includeProviderArt } | `Result<…>` | none |
+| `sharePage:save` | `sharePage.save` | Save the self-contained share page | { title, source, fields, includeAdult, includeProviderArt } | `Result<…>` | save dialog → file write |
+| `backdrop:forItem` | `backdrop.forItem` | Backdrop palette/images for an item | { itemId } | `Result<…>` | may compute + cache a palette |
+| `backdrop:setItemStyle` | `backdrop.setItemStyle` | Per-item backdrop style | { itemId, style } | `Result<…>` | DB write |
+| `backdrop:storage` | `backdrop.storage` | Artwork cache size | — | `Result<…>` | none |
+| `backdrop:clearCache` | `backdrop.clearCache` | Clear re-downloadable cached images (never user-selected/added) | — | `Result<…>` | file delete; DB write |
+| `backdrop:enforceCap` | `backdrop.enforceCap` | Evict LRU cached images over the cap | — | `Result<…>` | file delete; DB write |
+| `libraries:list` | `libraries.list` | Libraries | — | `Result<…>` | none |
+| `libraries:create` | `libraries.create` | Create a library | { name } | `Result<…>` | folder + registry write |
+| `libraries:rename` | `libraries.rename` | Rename a library | { id, name } | `Result<…>` | registry write |
+| `libraries:duplicate` | `libraries.duplicate` | Copy a library (DB snapshot + artwork) | { id } | `Result<…>` | file copy |
+| `libraries:delete` | `libraries.remove` | Delete a non-active library after a snapshot | { id } | `Result<…>` | file delete |
+| `libraries:switch` | `libraries.switchTo` | Switch library (restarts the app) | { id } | `Result<…>` | registry write; relaunch |
 <!-- IPC-TABLE:END -->
 
 
@@ -294,3 +397,36 @@ The preload exposes `window.maybePile` with these namespaces: `app`, `settings`,
 - **E2E hook:** when `MAYBEPILE_E2E_HOOKS=1`, main exposes its HTTP client on a main-process global for the Playwright suite. The renderer can't reach main globals, and the variable is never set in normal use.
 - **IPC:** 80 new channels, each with a strict Zod request schema validated in main. The table above is regenerated by `scripts/gen-ipc-docs.ts`, and the preload snapshot test was updated (additions only).
 - **Sync folder:** the path comes only from main's native folder dialog. `settings:update` rejects the `sync` key. Logs of other devices are size-capped and validated line by line (Zod). Only file names matching `<uuid>.jsonl` are read, and only this device's own file is written (temp file + rename). A database snapshot is taken before every apply.
+
+## 2.1 additions
+
+**New IPC namespaces** (table above): `notify`, `reminders`, `quick`, `trash`, `changes`, `extras`, `views`,
+`templates`, `timeGoals`, `wall`, `paste`, `queue`, `checkup`, `bulkEdit`, `rules`, `triage`, `backupCheck`,
+`sharePage`, `backdrop`, `libraries`. Every request is a strict Zod object (snapshot + garbage-payload tests).
+`settings:update` cannot change `notifications` (only `notify:apply`, which confirms and installs) or `window`.
+Two push events, validated in the preload: `event:inAppNotification` (strings capped, UUID item id) and
+`event:openItem` (UUID only).
+
+**Protocol `maybepile://`** — allowlist in `src/notifications/protocol.ts`: `item/<uuid>`, `open`,
+`action/snooze?target=&for=1h|tomorrow`, `action/mute?target=`; targets `item:<uuid>`, `reminder:<uuid>`,
+`category:<known>`. Rejected: unknown hosts/paths/params, duplicate params, credentials, ports, fragments,
+whitespace/control characters, > 300 chars. Threat model: any web page or file can launch the URL; the worst
+outcome is a snoozed or muted reminder in `notify-state.sqlite` or the app focusing an item. Nothing can be
+deleted, exported, revealed or changed in the library. Silent actions run in a separate short-lived process
+with no window and no library access.
+
+**Headless helper**: no window/renderer, no network (asserted with a throwing `fetch` stub in tests), library
+opened read-only (`SQLITE_READONLY` on any write), strict arguments (only `--reminder-check`, `--dry-run`,
+`--data-dir <absolute>`), hard timeout, redacted logs.
+
+**Registration files** are generated from fixed templates; paths are validated (Windows: no quotes,
+wildcards, redirection or control characters; Linux: absolute, no quotes, backslashes, backticks, `$`, `%`,
+`..`) and refused otherwise; commands run with argument arrays (`execFile`, no shell, hidden window).
+
+**Share page**: see features/share-page.md (escaping, `data:`-only images, CSP without scripts).
+**Imported view/template files**: 64 KB cap, strict versioned schemas, whitelisted query fields only.
+**Images (key-free sources)**: same pipeline as before — per-source host allowlist (`static.tvmaze.com`,
+`upload.wikimedia.org`), https only, no cross-host redirects, size caps, magic-byte check, SVG rejected,
+pixel caps, metadata stripped on re-encode. Unofficial image services are not used at all.
+**Notification text** is built only from validated DB values, plain text, control/bidi characters stripped,
+then escaped per channel (toast XML, GVariant strings, body markup when the daemon advertises it).

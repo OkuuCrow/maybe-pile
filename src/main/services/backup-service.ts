@@ -107,16 +107,9 @@ export class BackupService {
     try {
       const snap = join(tmp, 'library.sqlite');
       db.snapshotTo(snap);
-      // Soft-deleted items are not part of backups.
+      // 2.1: Recently deleted items stay in backups (their deleted_at gives the purge date).
       const s = new Db(snap);
       try {
-        const deleted = s.all<{ rid: number }>('SELECT rid FROM items WHERE deleted_at IS NOT NULL');
-        if (deleted.length > 0) {
-          s.transaction(() => {
-            for (const d of deleted) s.run('DELETE FROM items_fts WHERE rowid = ?', [d.rid]);
-            s.run('DELETE FROM items WHERE deleted_at IS NOT NULL');
-          });
-        }
         s.exec('PRAGMA journal_mode = DELETE');
       } finally {
         s.close();

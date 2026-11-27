@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Db } from '../../src/db/connection';
 import { LATEST_SCHEMA_VERSION, MIGRATIONS, currentSchemaVersion, migrate } from '../../src/db/migrate';
 import { decodeText } from '../../src/main/ipc/handlers';
@@ -18,11 +18,10 @@ import { ReleaseRadarService } from '../../src/main/services/release-radar-servi
 import { SecretsService } from '../../src/main/services/secrets-service';
 import { EXPORT_FORMAT_VERSION } from '../../src/main/services/portable-format';
 import { QuickCaptureShortcut } from '../../src/main/quick-capture';
-import { CHECK_EVERY_MS, startReleaseNotifier } from '../../src/main/release-notifier';
 import { parseCsv } from '../../src/domain/csv';
 import { tempDir } from '../helpers/db';
 import type { LibraryQuery } from '../../src/shared/schemas';
-import type { DueNotification } from '../../src/main/services/release-radar-service';
+import { ResidentScheduler } from '../../src/main/notify-electron';
 import { FakeHttp, instantLimiter } from '../helpers/http';
 import { makeFeatureEnv, STEAM_KEY, type FeatureEnv } from '../helpers/features';
 import { FakeClock, addItem, season } from '../helpers/services';
@@ -589,41 +588,39 @@ describe('Release Radar', () => {
     expect(radar.dueNotifications().map((n) => n.kind)).toEqual(['today']);
   });
 
-  it('notifier runs checks at start and hourly with a mocked Notification', () => {
-    const shown: string[] = [];
-    let tick: (() => void) | null = null;
-    let due: DueNotification[] = [
-      { itemId: 'x', kind: 'today', title: 'Out today', body: 'X releases today.' },
-    ];
-    const n = startReleaseNotifier({
-      due: () => {
-        const d = due;
-        due = [];
-        return d;
-      },
-      notify: (x) => void shown.push(x.body),
-      isSupported: () => true,
-      setInterval: (fn, ms) => {
-        expect(ms).toBe(CHECK_EVERY_MS);
-        tick = fn;
-        return 1;
-      },
-      clearInterval: () => undefined,
-    });
-    expect(shown).toEqual(['X releases today.']);
-    due = [{ itemId: 'y', kind: 'tomorrow', title: 'Out tomorrow', body: 'Y releases tomorrow.' }];
-    (tick as unknown as () => void)();
-    expect(shown).toHaveLength(2);
-    n.stop();
-    expect(
-      startReleaseNotifier({
-        due: () => due,
-        notify: () => shown.push('!'),
-        isSupported: () => false,
-        setInterval: () => 0,
-        clearInterval: () => undefined,
-      }).check(),
-    ).toBe(0);
+  it('2.1 resident scheduler (replaces the hourly while-open notifier): ticks, clock jumps, no overlap, stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const reasons: string[] = [];
+      let release: () => void = () => undefined;
+      let wallClock = 0;
+      const sched = new ResidentScheduler(
+        (reason) => {
+          reasons.push(reason);
+          return reason === 'slow' ? new Promise<void>((r) => (release = r)) : Promise.resolve();
+        },
+        { tickMs: 1_000, now: () => wallClock },
+      );
+      sched.start();
+      expect(reasons).toEqual(['start']);
+      wallClock += 1_000;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(reasons.at(-1)).toBe('tick');
+      wallClock += 1_000 + 3 * 60_000; // the wall clock jumped (sleep / manual change)
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(reasons.at(-1)).toBe('clock-change');
+      const slow = sched.kick('slow');
+      await sched.kick('resume'); // ignored: a run is in progress
+      release();
+      await slow;
+      expect(reasons.filter((r) => r === 'resume')).toEqual([]);
+      sched.stop();
+      expect(sched.active).toBe(false);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reasons.filter((r) => r === 'tick')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

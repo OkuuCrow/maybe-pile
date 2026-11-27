@@ -56,6 +56,9 @@ export const OUTBOUND_HOSTS = [
   'api.igdb.com',
   'images.igdb.com',
   'www.wikidata.org',
+  // 2.1 key-free artwork: Wikimedia Commons API + file host.
+  'commons.wikimedia.org',
+  'upload.wikimedia.org',
   'graphql.anilist.co',
   's4.anilist.co',
   // Library sources (1.2): Steam Web API, called only with the user's own key.

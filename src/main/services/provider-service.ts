@@ -678,7 +678,33 @@ export class ProviderService {
     const exact = hits.value.filter((h) => titleKey(h.title) === key);
     if (exact.length !== 1 || !exact[0])
       return { ok: false, reason: exact.length > 1 ? 'Several matches; skipped.' : 'No exact match.' };
-    const details = await p.fetchDetails(exact[0].ref, this.context(p, signal));
+    return this.fillEmptyFromRef(itemId, p, exact[0].ref, signal);
+  }
+
+  /**
+   * §16.6 offline queue / §14.6 review: the user picked this match. Fills only empty fields and links the
+   * source; user-entered values are never overwritten (same rule as enrichment).
+   */
+  async enrichFromRef(
+    itemId: string,
+    ref: ProviderRef,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; reason: string | null }> {
+    const p = getProvider(ref.providerId);
+    if (!p || !this.enabled(p)) return { ok: false, reason: 'That source is not available.' };
+    return this.fillEmptyFromRef(itemId, p, ref, signal);
+  }
+
+  private async fillEmptyFromRef(
+    itemId: string,
+    p: MetadataProvider,
+    ref: ProviderRef,
+    signal?: AbortSignal,
+  ): Promise<{ ok: boolean; reason: string | null }> {
+    const db = this.ctx.db();
+    const row = items.getItemRow(db, itemId);
+    if (!row) return { ok: false, reason: 'Item no longer exists.' };
+    const details = await p.fetchDetails(ref, this.context(p, signal));
     if (details.kind !== 'ok') return { ok: false, reason: toUserSafeError(details, p.displayName).message };
     const incoming = details.value;
     const now = this.ctx.clock.now().toISOString();

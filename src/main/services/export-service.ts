@@ -4,6 +4,7 @@
  * content hash or remote URL; full backups include the binaries).
  */
 import { exportPack2 } from './pack2-portable';
+import { exportPack21 } from './pack21-portable';
 import { ROLE_LABELS, STATUS_LABELS, TYPE_LABELS, type MediaType } from '../../shared/enums';
 import { joinList, toCsv } from '../../domain/csv';
 import { ratingToStars } from '../../domain/rating';
@@ -23,8 +24,8 @@ import {
   type ExportItem,
 } from './portable-format';
 
-export function exportItem(db: Db, id: string): ExportItem | null {
-  const d = items.loadDetail(db, id);
+export function exportItem(db: Db, id: string, includeDeleted = false): ExportItem | null {
+  const d = items.loadDetail(db, id, includeDeleted);
   if (!d) return null;
   const art = db.get<{
     source: 'cache' | 'user' | 'remote';
@@ -155,10 +156,9 @@ export function libraryCounts(db: Db): CountsView {
 }
 
 export function buildJsonExport(db: Db, appVersion: string, now: Date): ExportEnvelope {
-  const ids = db
-    .all<{ id: string }>('SELECT id FROM items WHERE deleted_at IS NULL ORDER BY created_at, id')
-    .map((r) => r.id);
-  const exported = ids.map((id) => exportItem(db, id)).filter((x): x is ExportItem => x !== null);
+  // 2.1: Recently deleted items are exported too; `pack21.trash` marks them (with their deletion time).
+  const ids = db.all<{ id: string }>('SELECT id FROM items ORDER BY created_at, id').map((r) => r.id);
+  const exported = ids.map((id) => exportItem(db, id, true)).filter((x): x is ExportItem => x !== null);
   const { settings } = readSettings(db);
   const counts = libraryCounts(db);
   return {
@@ -222,6 +222,7 @@ export function buildJsonExport(db: Db, appVersion: string, now: Date): ExportEn
       },
       ...exportFeatureData(db),
       pack2: exportPack2(db),
+      pack21: exportPack21(db),
     },
   };
 }

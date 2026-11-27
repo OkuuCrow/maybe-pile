@@ -12,6 +12,7 @@ import { AppSettingsSchema, DEFAULT_LIBRARY_QUERY, type AppSettings } from '../.
 import { b2i, i2b, type Db } from '../connection';
 import { DEFAULT_LAYOUTS, repairLayout, type LayoutEntry, type LayoutSurface } from '../../domain/layouts';
 import { SYSTEM_THEME_ID, ThemeTokensSchema, type ThemeTokens } from '../../domain/themes';
+import { DEFAULT_NOTIFICATION_SETTINGS } from '../../shared/notification-settings';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   activeThemeId: SYSTEM_THEME_ID,
@@ -44,8 +45,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   artwork: {
     priority: {
-      movie: ['tmdb', 'fanart'],
-      tv: ['tmdb', 'tvmaze', 'fanart'],
+      movie: ['tmdb', 'fanart', 'commons'],
+      tv: ['tmdb', 'tvmaze', 'tvmaze-art', 'fanart', 'commons'],
       anime: ['kitsu', 'anilist', 'mal', 'tmdb', 'fanart'],
       game: ['steamgriddb', 'igdb'],
       book: ['openlibrary'],
@@ -58,7 +59,60 @@ export const DEFAULT_SETTINGS: AppSettings = {
   availability: { leavingSoonDays: 14, notifications: false },
   recommendations: { enabled: true },
   sync: { enabled: false, folder: null, deviceName: 'This computer' },
+  notifications: DEFAULT_NOTIFICATION_SETTINGS,
+  interface: {
+    level: 'simple',
+    hiddenTypes: [],
+    textSize: 'normal',
+    density: 'comfortable',
+    firstRunDone: false,
+    simpleOfferDismissed: false,
+    dontAsk: [],
+    restorePlace: true,
+    font: 'default',
+    lineSpacing: 'normal',
+    letterSpacing: 'normal',
+    reduceEffects: false,
+  },
+  backdrops: { style: 'ambient', intensity: 60, blur: 24, onlyDetail: true, cacheCapMb: 1024 },
+  artworkSources: { tvmaze: true, commons: true },
+  trash: { retentionDays: 30 },
+  changeLog: { enabled: true, retentionDays: 90, maxEntries: 5000 },
+  ratingPrompt: { enabled: true, onlyUnrated: true },
+  autoRules: {
+    suggestCompleted: false,
+    onHoldAfterDays: { enabled: false, days: 90 },
+    stalePlanned: { enabled: false, months: 12 },
+    removeFromUpNextOnStart: false,
+  },
+  themeSchedule: {
+    enabled: false,
+    lightThemeId: SYSTEM_THEME_ID,
+    darkThemeId: SYSTEM_THEME_ID,
+    lightAt: '07:00',
+    darkAt: '19:00',
+  },
+  place: { hash: null, scrollY: 0 },
+  nextStep: { clearOnComplete: false },
+  window: null,
 };
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * Deep-merges a stored value over its default (objects only; arrays and
+ * scalars replace). Lets a newer app add fields to an object setting without
+ * resetting what the user already chose; unknown stored keys are dropped.
+ * Record-shaped defaults (no fixed keys, e.g. providerEnabled) keep the stored value.
+ */
+export function mergeOverDefault(def: unknown, stored: unknown): unknown {
+  if (!isPlainObject(def) || !isPlainObject(stored)) return stored;
+  if (Object.keys(def).length === 0) return stored;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(def)) out[k] = k in stored ? mergeOverDefault(v, stored[k]) : v;
+  return out;
+}
 
 export function readSettings(
   db: Db,
@@ -79,7 +133,13 @@ export function readSettings(
       continue;
     }
     const v = schema.safeParse(parsed);
-    if (v.success) out[r.key] = v.data;
+    if (v.success) {
+      out[r.key] = v.data;
+      continue;
+    }
+    // Forward-compatible retry: fill fields added since the value was stored.
+    const merged = schema.safeParse(mergeOverDefault(defaults[r.key as keyof AppSettings], parsed));
+    if (merged.success) out[r.key] = merged.data;
     else invalidKeys.push(r.key);
   }
   return { settings: out as AppSettings, invalidKeys };

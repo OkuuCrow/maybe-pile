@@ -6,6 +6,8 @@
   },
   "include": [
     "src/main",
+    "src/notifications",
+    "src/helper",
     "src/preload",
     "src/db",
     "src/providers",

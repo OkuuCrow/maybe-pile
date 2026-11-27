@@ -119,3 +119,11 @@ Rules:
 ## Expansion Pack 2
 
 No new *required* theme tokens. The new components (artwork grid, mood toggles, heatmap levels, timer) derive their colors from the existing tokens with `color-mix()`, so built-in and custom themes work unchanged. The layout schema is unchanged; the new item-page panels and the Pile page aren't part of the configurable dashboard/library layouts.
+
+## 2.1: layouts per interface level
+
+Simple Mode always shows its fixed Home (search/add, Continue, Up Next, counts, pinned views); your saved
+dashboard layout is used — unchanged — whenever you are in Full mode. Themes apply in both modes. Theme
+tokens: backdrops use `--mp-bg` as the scrim color and `--mp-text` for the contrast solve, so any theme that
+passes the existing AA checks keeps backdrop text readable; no new theme tokens were added (the scrim bounds
+are fixed in code: minimum 35 % opacity, raised as needed for 4.5:1).

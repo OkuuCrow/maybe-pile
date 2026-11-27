@@ -46,3 +46,11 @@ API keys for fanart.tv and SteamGridDB are stored with `safeStorage`, sent only 
 ## Adult artwork
 
 Art for adult items is blurred (CSS blur plus an "Adult content — show" button and an "(adult content, blurred)" alt text) until you reveal it. Settings → Features → Anime → *Blur adult artwork* controls this.
+
+## 2.1: key-free sources and backdrops
+
+Key-free sources (TVmaze, Wikimedia Commons) are listed first in the picker; sources needing a key show
+“Add a free key in Settings → Providers to unlock more images.” Excluded sources and the reasons are in
+providers.md. Backdrops (Ambient / Banner / Full-page blurred), the AA scrim guarantee, the per-item style,
+palette caching and the cache cap with LRU eviction are described in features/backdrops.md. User-selected
+backdrops are included in backups like other artwork; palettes and caches regenerate.

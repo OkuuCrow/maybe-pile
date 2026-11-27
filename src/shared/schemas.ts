@@ -25,6 +25,7 @@ import {
   TITLE_LANGUAGES,
 } from './enums';
 import { isValidIsoDate, isValidPartialDate } from '../domain/dates';
+import { NotificationSettingsSchema } from './notification-settings';
 
 export const LIMITS = {
   title: 500,
@@ -511,6 +512,76 @@ export const CurrencyCodeSchema = z
   .string()
   .regex(/^[A-Z]{3}$/, 'Use a three-letter currency code, e.g. USD.');
 
+/* ---- 2.1: Simple Mode, appearance extras, backdrops, QoL ---- */
+export const INTERFACE_LEVELS = ['simple', 'full'] as const;
+export type InterfaceLevel = (typeof INTERFACE_LEVELS)[number];
+const PromptIdSchema = z.string().regex(/^[a-z0-9.-]{1,40}$/);
+export const InterfaceSettingsSchema = z.strictObject({
+  level: z.enum(INTERFACE_LEVELS),
+  /** Media types hidden from tabs/Add/filters (types that still contain items stay visible). */
+  hiddenTypes: z.array(MediaTypeSchema).max(5),
+  textSize: z.enum(['normal', 'large', 'larger']),
+  density: z.enum(['comfortable', 'spacious']),
+  firstRunDone: z.boolean(),
+  /** One-time "Try Simple Mode" banner for upgraders. */
+  simpleOfferDismissed: z.boolean(),
+  /** Prompts the user answered "Don't ask again" to. */
+  dontAsk: z.array(PromptIdSchema).max(50),
+  restorePlace: z.boolean(),
+  font: z.enum(['default', 'dyslexic']),
+  lineSpacing: z.enum(['normal', 'relaxed', 'loose']),
+  letterSpacing: z.enum(['normal', 'wide', 'wider']),
+  /** Reduce effects / high contrast: turns backdrops and blur off. */
+  reduceEffects: z.boolean(),
+});
+export type InterfaceSettings = z.infer<typeof InterfaceSettingsSchema>;
+
+export const BACKDROP_STYLES = ['off', 'ambient', 'banner', 'blurred'] as const;
+export type BackdropStyle = (typeof BACKDROP_STYLES)[number];
+export const BackdropSettingsSchema = z.strictObject({
+  style: z.enum(BACKDROP_STYLES),
+  /** 0–100: how strongly the backdrop shows through (the scrim always guarantees AA text contrast). */
+  intensity: z.number().int().min(0).max(100),
+  blur: z.number().int().min(0).max(40),
+  onlyDetail: z.boolean(),
+  /** Cache cap for downloaded artwork (MB); LRU evicts non-user-selected images only. */
+  cacheCapMb: z.number().int().min(100).max(20_000),
+});
+export type BackdropSettings = z.infer<typeof BackdropSettingsSchema>;
+
+/** Key-free artwork sources (§15); both on by default after the 2026-11-26 terms review (docs/providers.md). */
+export const ArtworkSourceSettingsSchema = z.strictObject({
+  tvmaze: z.boolean(),
+  commons: z.boolean(),
+});
+
+export const AutoRulesSchema = z.strictObject({
+  suggestCompleted: z.boolean(),
+  onHoldAfterDays: z.strictObject({ enabled: z.boolean(), days: z.number().int().min(7).max(3650) }),
+  stalePlanned: z.strictObject({ enabled: z.boolean(), months: z.number().int().min(1).max(120) }),
+  removeFromUpNextOnStart: z.boolean(),
+});
+export type AutoRules = z.infer<typeof AutoRulesSchema>;
+
+export const ThemeScheduleSchema = z.strictObject({
+  enabled: z.boolean(),
+  lightThemeId: z.string().min(1).max(80),
+  darkThemeId: z.string().min(1).max(80),
+  lightAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  darkAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+});
+export type ThemeSchedule = z.infer<typeof ThemeScheduleSchema>;
+
+export const PlaceSchema = z.strictObject({
+  /** Last route hash (validated by the router again on restore). */
+  hash: z
+    .string()
+    .max(200)
+    .regex(/^#\/[A-Za-z0-9/_-]*$/)
+    .nullable(),
+  scrollY: z.number().int().min(0).max(10_000_000),
+});
+
 export const AppSettingsSchema = z.strictObject({
   activeThemeId: z.string().min(1).max(80),
   region: RegionSchema,
@@ -552,11 +623,43 @@ export const AppSettingsSchema = z.strictObject({
     folder: z.string().max(1000).nullable(),
     deviceName: z.string().min(1).max(60),
   }),
+  /* ---- 2.1 ---- */
+  notifications: NotificationSettingsSchema,
+  interface: InterfaceSettingsSchema,
+  backdrops: BackdropSettingsSchema,
+  artworkSources: ArtworkSourceSettingsSchema,
+  trash: z.strictObject({ retentionDays: z.number().int().min(1).max(365) }),
+  changeLog: z.strictObject({
+    enabled: z.boolean(),
+    retentionDays: z.number().int().min(1).max(3650),
+    maxEntries: z.number().int().min(100).max(100_000),
+  }),
+  ratingPrompt: z.strictObject({ enabled: z.boolean(), onlyUnrated: z.boolean() }),
+  autoRules: AutoRulesSchema,
+  themeSchedule: ThemeScheduleSchema,
+  place: PlaceSchema,
+  nextStep: z.strictObject({ clearOnComplete: z.boolean() }),
+  /** Window geometry is written by main only (validated against current displays on restore). */
+  window: z
+    .strictObject({
+      x: z.number().int().min(-100_000).max(100_000),
+      y: z.number().int().min(-100_000).max(100_000),
+      width: z.number().int().min(400).max(20_000),
+      height: z.number().int().min(300).max(20_000),
+      maximized: z.boolean(),
+    })
+    .nullable(),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 
 /** `sync` is excluded: the folder may only be chosen through main's native dialog (sync:chooseFolder). */
-export const SettingsPatchSchema = AppSettingsSchema.omit({ sync: true }).partial().strict();
+/**
+ * `sync` (folder only via main's dialog), `window` (main-owned geometry) and `notifications`
+ * (only via notify:apply, which confirms and installs background components) are excluded.
+ */
+export const SettingsPatchSchema = AppSettingsSchema.omit({ sync: true, window: true, notifications: true })
+  .partial()
+  .strict();
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>;
 
 /* ---------- provider requests ---------- */

@@ -7,6 +7,7 @@
  * never partially imported from a damaged file.
  */
 import { importPack2 } from './pack2-portable';
+import { importPack21 } from './pack21-portable';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -981,6 +982,7 @@ export class ImportService {
   private applyExtras(env: ExportEnvelope, idMap: Map<string, string>, now: string): void {
     this.applyFeatureData(env, idMap, now);
     if (env.data.pack2) importPack2(this.db, env.data.pack2, idMap, now);
+    if (env.data.pack21) importPack21(this.db, env.data.pack21, idMap, now);
     const db = this.db;
     const existingThemes = listThemes(db);
     const takenNames = new Set(existingThemes.map((t) => t.name.toLowerCase()));

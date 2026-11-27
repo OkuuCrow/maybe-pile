@@ -28,10 +28,16 @@ export class Db {
       enableForeignKeyConstraints: true,
       timeout: 5_000,
     });
-    if (!this.readOnly && file !== ':memory:') this.raw.exec('PRAGMA journal_mode = WAL');
-    this.raw.exec('PRAGMA synchronous = NORMAL');
-    this.raw.exec('PRAGMA foreign_keys = ON');
-    this.raw.exec('PRAGMA busy_timeout = 5000');
+    try {
+      if (!this.readOnly && file !== ':memory:') this.raw.exec('PRAGMA journal_mode = WAL');
+      this.raw.exec('PRAGMA synchronous = NORMAL');
+      this.raw.exec('PRAGMA foreign_keys = ON');
+      this.raw.exec('PRAGMA busy_timeout = 5000');
+    } catch (e) {
+      // Not a database / unreadable: release the file handle (Windows keeps it locked otherwise).
+      this.raw.close();
+      throw e;
+    }
   }
 
   private stmt(sql: string): StatementSync {

@@ -53,6 +53,7 @@ import * as S from './schemas';
 import type * as T from './types';
 import type { API_SHAPE, Channel, MenuCommand } from './ipc-channels';
 import type { Result } from './result';
+import { REQUEST_SCHEMAS_21, type ResponseTypes21 } from './ipc-contract-21';
 import type {
   BatchImportResultView,
   CommandTarget,
@@ -424,6 +425,7 @@ export const REQUEST_SCHEMAS = {
   'sync:apply': none,
   'sync:conflicts': none,
   'sync:resolve': z.strictObject({ id: IdSchema, choice: z.enum(['mine', 'theirs']) }),
+  ...REQUEST_SCHEMAS_21,
 } as const satisfies Record<Channel, z.ZodType>;
 
 export interface ThemeDetailView {
@@ -445,7 +447,7 @@ export interface ActiveThemeView {
 export type CreateResultView =
   { kind: 'created'; item: ItemDetail } | { kind: 'duplicates'; matches: DuplicateMatch[] };
 
-export interface ResponseTypes {
+export interface ResponseTypes extends ResponseTypes21 {
   'app:info': AppInfo;
   'app:openDataFolder': null;
   'app:openExternal': null;
@@ -687,5 +689,9 @@ export type MaybePileApi = {
 } & {
   readonly events: {
     onMenuCommand(cb: (command: MenuCommand) => void): () => void;
+    /** In-app banner for a reminder that could not be shown by the OS (2.1). */
+    onInAppNotification(cb: (n: { title: string; body: string; itemId: string | null }) => void): () => void;
+    /** A notification click / maybepile://item link asks the app to open an item (2.1). */
+    onOpenItem(cb: (itemId: string) => void): () => void;
   };
 };
