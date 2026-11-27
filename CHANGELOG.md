@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1 (2026-11-26)
+
+### Fixed
+
+- The “How was it?” rating card is now shown inline at the top of the page instead of floating over content; on smaller windows it could cover library cards and block clicks for up to a minute.
+
+
 ## 2.1.0 — Notifications Pack + Simple Mode (2026-11-26)
 
 ### New
